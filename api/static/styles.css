@@ -77,17 +77,36 @@ html, body {
 .hero .top { text-align: right; }
 .hero .top-channel { font-size: 24px; font-weight: 600; }
 .hero .top-seconds { font-size: 14px; opacity: 0.85; }
-.hero .live {
-  position: absolute; top: 16px; right: 16px;
-  display: flex; align-items: center; gap: 8px;
-  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+@keyframes pulse { 50% { opacity: 0.5; } }
+
+/* ---------- Now-watching card ---------- */
+.live-card {
+  grid-column: 1 / -1;
+  border-left: 4px solid var(--live);
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: var(--gap);
 }
-.hero .live .dot {
+.live-card .live-meta {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.live-card .live-meta .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--live); box-shadow: 0 0 8px var(--live);
   animation: pulse 1.5s infinite;
 }
-@keyframes pulse { 50% { opacity: 0.5; } }
+.live-card .live-channel-name {
+  font-size: 24px; font-weight: 700;
+}
+.live-card .live-title {
+  font-size: 15px; color: var(--text); line-height: 1.3;
+}
+.live-card .live-category {
+  font-size: 13px; color: var(--muted);
+}
+.live-card .live-title:empty,
+.live-card .live-category:empty { display: none; }
 
 /* ---------- Pills ---------- */
 .pills {

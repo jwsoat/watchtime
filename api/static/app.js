@@ -140,6 +140,8 @@ async function updateHero() {
   if (now && now.channel) {
     $("live-indicator").classList.remove("hidden");
     $("live-channel").textContent = now.channel;
+    $("live-title").textContent = now.title || "";
+    $("live-category").textContent = now.category || "";
   } else {
     $("live-indicator").classList.add("hidden");
   }
