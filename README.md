@@ -93,7 +93,15 @@ docker exec twitch-watch-api sh -c \
   "sqlite3 /data/watchtime.db .dump" > backup-$(date +%F).sql
 ```
 
+## Dashboard (Phase 2)
+
+Once heartbeats are flowing, the dashboard is available at:
+
+- `http://192.168.1.100:8765/` — main dashboard (paste your API key on first visit)
+- `http://192.168.1.100:8765/tv` — ambient scoreboard / rotating panels (point a spare display at this URL)
+
+The dashboard is per-Twitch-account. The account picker in the top-right defaults to whichever account has the most recent activity. To pre-select an account on the TV view: `?user=<login>`.
+
 ## What's next
 
-- Phase 2: custom HTML dashboard served from the API container
-- Phase 3: REST sensors in Home Assistant pointed at `/stats/*`
+- Phase 3: REST sensors in Home Assistant pointed at `/stats/*` (see `docs/superpowers/specs/2026-05-16-dashboard-design.md`).
