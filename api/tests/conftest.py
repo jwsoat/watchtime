@@ -54,3 +54,16 @@ def db():
         conn.commit()
     finally:
         conn.close()
+
+
+def insert_heartbeat(
+    db_conn, ts, channel, twitch_user=None, category=None,
+    title=None, state="active", tab_visible=1, client_id="test-client",
+):
+    """Insert a heartbeat row directly. Caller must commit."""
+    db_conn.execute(
+        "INSERT INTO heartbeats "
+        "(ts, channel, category, title, state, tab_visible, client_id, twitch_user) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (ts, channel.lower(), category, title, state, tab_visible, client_id, twitch_user),
+    )

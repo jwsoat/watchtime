@@ -93,6 +93,7 @@ class Heartbeat(BaseModel):
     state: str = Field(..., pattern="^(active|passive|audio_only)$")
     tab_visible: bool
     client_id: str = Field(..., min_length=1, max_length=64)
+    twitch_user: Optional[str] = Field(default=None, max_length=64)
 
 
 class HeartbeatBatch(BaseModel):
@@ -111,10 +112,10 @@ def heartbeat(hb: Heartbeat):
     with db() as conn:
         conn.execute(
             "INSERT INTO heartbeats "
-            "(ts, channel, category, title, state, tab_visible, client_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(ts, channel, category, title, state, tab_visible, client_id, twitch_user) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (hb.ts, hb.channel.lower(), hb.category, hb.title,
-             hb.state, int(hb.tab_visible), hb.client_id),
+             hb.state, int(hb.tab_visible), hb.client_id, hb.twitch_user),
         )
     return {"ok": True}
 
@@ -123,14 +124,14 @@ def heartbeat(hb: Heartbeat):
 def heartbeats_batch(batch: HeartbeatBatch):
     rows = [
         (hb.ts, hb.channel.lower(), hb.category, hb.title,
-         hb.state, int(hb.tab_visible), hb.client_id)
+         hb.state, int(hb.tab_visible), hb.client_id, hb.twitch_user)
         for hb in batch.heartbeats
     ]
     with db() as conn:
         conn.executemany(
             "INSERT INTO heartbeats "
-            "(ts, channel, category, title, state, tab_visible, client_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(ts, channel, category, title, state, tab_visible, client_id, twitch_user) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     return {"ok": True, "stored": len(rows)}
