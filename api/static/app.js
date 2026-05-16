@@ -111,11 +111,18 @@ async function boot() {
 
 // ---------- Formatters ----------
 function fmtDuration(seconds) {
-  if (!seconds) return "0m";
+  if (!seconds) return "0 seconds";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
-  if (h === 0) return `${m}m`;
-  return `${h}h ${m}m`;
+  const s = seconds % 60;
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  if (h > 0) {
+    return m === 0 ? plural(h, "hour") : `${plural(h, "hour")} ${plural(m, "minute")}`;
+  }
+  if (m > 0) {
+    return s === 0 ? plural(m, "minute") : `${plural(m, "minute")} ${plural(s, "second")}`;
+  }
+  return plural(s, "second");
 }
 
 function fmtRelative(ts) {
