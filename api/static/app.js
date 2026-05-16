@@ -227,6 +227,41 @@ async function updateDailyChart() {
   });
 }
 
+// ---------- Quick stats ----------
+async function updateQuickStats() {
+  const [totalAll, allChannels, daily] = await Promise.all([
+    api(withUser("/stats/total?window=all")),
+    api(withUser("/stats/all")),
+    api(withUser("/stats/daily?days=365")),
+  ]);
+  $("qs-total").textContent = fmtDuration(totalAll.seconds);
+  $("qs-channels").textContent = allChannels.channels.length.toString();
+  const longestDay = daily.days.reduce(
+    (max, d) => (d.seconds > max ? d.seconds : max), 0
+  );
+  $("qs-longest").textContent = fmtDuration(longestDay);
+}
+
+// ---------- Recently watched ----------
+async function updateRecent() {
+  const { recent } = await api(withUser("/stats/recent?limit=5"));
+  const root = $("recent-list");
+  root.innerHTML = "";
+  if (recent.length === 0) {
+    root.innerHTML = '<div style="color:var(--muted)">Nothing watched yet.</div>';
+    return;
+  }
+  recent.forEach((r) => {
+    const row = document.createElement("div");
+    row.className = "recent-row";
+    row.innerHTML = `
+      <div>${r.channel}</div>
+      <div class="when">${fmtRelative(r.last_ts)}</div>
+    `;
+    root.appendChild(row);
+  });
+}
+
 // ---------- Refresh ----------
 async function refresh() {
   try {
@@ -234,6 +269,8 @@ async function refresh() {
       updateHero(),
       updateTopChannels(),
       updateDailyChart(),
+      updateQuickStats(),
+      updateRecent(),
     ]);
   } catch (e) {
     console.warn("refresh failed", e);
