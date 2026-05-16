@@ -109,9 +109,49 @@ async function boot() {
   state.pollTimer = setInterval(refresh, POLL_MS);
 }
 
-// ---------- Refresh (filled in by later tasks) ----------
+// ---------- Formatters ----------
+function fmtDuration(seconds) {
+  if (!seconds) return "0m";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+function fmtRelative(ts) {
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// ---------- Hero ----------
+async function updateHero() {
+  const [todayTotal, topToday, now] = await Promise.all([
+    api(withUser("/stats/total?window=today")),
+    api(withUser("/stats/top_channel?window=today")),
+    api(withUser("/stats/now")),
+  ]);
+  $("today-value").textContent = fmtDuration(todayTotal.seconds);
+  $("top-channel").textContent = topToday.channel || "—";
+  $("top-seconds").textContent = fmtDuration(topToday.seconds);
+
+  if (now && now.channel) {
+    $("live-indicator").classList.remove("hidden");
+    $("live-channel").textContent = now.channel;
+  } else {
+    $("live-indicator").classList.add("hidden");
+  }
+}
+
+// ---------- Refresh ----------
 async function refresh() {
-  // Implemented incrementally in Tasks 16-19.
+  try {
+    await updateHero();
+  } catch (e) {
+    console.warn("refresh failed", e);
+  }
 }
 
 // ---------- Init ----------
