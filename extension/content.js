@@ -40,8 +40,44 @@ function getTitle() {
   return el ? el.textContent.trim().slice(0, 512) : null;
 }
 
-let twitchUser = null;
-chrome.storage.local.get("twitchUser", ({ twitchUser: u }) => { twitchUser = u || null; });
+let twitchUserFallback = null;
+chrome.storage.local.get("twitchUser", ({ twitchUser: u }) => { twitchUserFallback = u || null; });
+
+// Auto-detect the logged-in Twitch account from the page so multi-account
+// setups work without manually updating the extension options.
+function detectLoggedInTwitchUser() {
+  // Strategy 1: Twitch's persisted Redux/React state in localStorage
+  try {
+    const raw = localStorage.getItem("twilight.persist");
+    if (raw) {
+      const data = JSON.parse(raw);
+      const login = data?.root?.currentUser?.login || data?.currentUser?.login;
+      if (login && typeof login === "string") return login.toLowerCase();
+    }
+  } catch {}
+
+  // Strategy 2: Twitch embeds a passport-context script tag with user info
+  try {
+    const ctx = document.getElementById("passport-context");
+    if (ctx) {
+      const data = JSON.parse(ctx.textContent);
+      if (data?.userLogin) return data.userLogin.toLowerCase();
+    }
+  } catch {}
+
+  // Strategy 3: DOM — the user menu toggle button exposes the username
+  // via a child element Twitch uses for their own test automation.
+  try {
+    const el = document.querySelector(
+      '[data-a-target="user-menu-toggle"] [data-a-target="user-display-name"],' +
+      '[data-a-target="user-menu-toggle"] p'
+    );
+    const name = el?.textContent?.trim();
+    if (name) return name.toLowerCase();
+  } catch {}
+
+  return null;
+}
 
 function getVideoState() {
   // Twitch can have multiple <video> elements (picture-in-picture, ads).
@@ -103,7 +139,7 @@ function tick() {
     title: getTitle(),
     state,
     tab_visible: tabVisible,
-    twitch_user: twitchUser,
+    twitch_user: detectLoggedInTwitchUser() || twitchUserFallback,
   };
 
   try {
