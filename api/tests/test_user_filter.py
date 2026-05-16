@@ -52,3 +52,11 @@ def test_all_user_filter(client, auth_headers, db):
     res = client.get("/stats/all?user=user_a", headers=auth_headers)
     channels = [c["channel"] for c in res.json()["channels"]]
     assert channels == ["alice"]
+
+
+def test_daily_user_filter(client, auth_headers, db):
+    _seed(db)
+    res = client.get("/stats/daily?user=user_a&days=2", headers=auth_headers)
+    data = res.json()
+    total = sum(d["seconds"] for d in data["days"])
+    assert total == 120  # only user_a's 2 heartbeats counted

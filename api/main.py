@@ -161,20 +161,21 @@ def stats_all(include_passive: bool = True, user: Optional[str] = None):
 
 
 @app.get("/stats/daily", dependencies=[Depends(require_api_key)])
-def stats_daily(days: int = 30, include_passive: bool = True):
+def stats_daily(days: int = 30, include_passive: bool = True, user: Optional[str] = None):
     """Watch time per day for the last N days."""
     since = int(time.time()) - days * 86400
     state_filter = "" if include_passive else "AND state = 'active'"
+    user_sql, user_params = _user_clause(user)
     with db() as conn:
         rows = conn.execute(f"""
             SELECT
                 date(ts, 'unixepoch', 'localtime') AS day,
                 COUNT(*) AS n
             FROM heartbeats
-            WHERE ts >= ? {state_filter}
+            WHERE ts >= ? {state_filter} {user_sql}
             GROUP BY day
             ORDER BY day ASC
-        """, (since,)).fetchall()
+        """, (since, *user_params)).fetchall()
     return {
         "interval_seconds": HEARTBEAT_INTERVAL,
         "days": [
