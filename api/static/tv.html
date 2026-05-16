@@ -1,5 +1,62 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Watchtime TV</title></head>
-<body><div id="tv">placeholder</div></body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Watchtime — TV</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="tv">
+  <div id="gate" class="gate hidden">
+    <div class="card">
+      <h2>Watchtime TV</h2>
+      <input id="gate-input" type="password" placeholder="API key" autocomplete="off">
+      <button id="gate-submit">Unlock</button>
+      <div id="gate-err" class="err"></div>
+    </div>
+  </div>
+
+  <div id="tv-page" class="tv-page hidden">
+    <div class="scoreboard">
+      <div>
+        <div class="today-label" style="font-size:14px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;">Today</div>
+        <div class="today-big mono" id="tv-today">0h 0m</div>
+      </div>
+      <div class="top-today">
+        <div class="lbl">Top today</div>
+        <div class="val" id="tv-top">—</div>
+      </div>
+      <div class="now idle" id="tv-now">
+        <div class="lbl" style="font-size:12px;letter-spacing:0.1em;text-transform:uppercase;">Status</div>
+        <div class="ch" id="tv-now-text">IDLE</div>
+      </div>
+    </div>
+
+    <div class="panel-frame">
+      <div class="panel" data-idx="0">
+        <h2>Top channels this week</h2>
+        <div id="tv-week-channels" class="ranked"></div>
+      </div>
+      <div class="panel" data-idx="1">
+        <h2>Daily — last 14 days</h2>
+        <canvas id="tv-daily" height="320"></canvas>
+      </div>
+      <div class="panel" data-idx="2">
+        <h2>All-time leaderboard</h2>
+        <div id="tv-all-channels" class="ranked"></div>
+      </div>
+      <div class="panel" data-idx="3">
+        <h2>Top categories this week</h2>
+        <div id="tv-categories" class="ranked"></div>
+      </div>
+    </div>
+
+    <div class="dots">
+      <span></span><span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/static/tv.js"></script>
+</body>
 </html>
