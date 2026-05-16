@@ -241,6 +241,28 @@ def stats_now(user: Optional[str] = None):
     }
 
 
+@app.get("/stats/users", dependencies=[Depends(require_api_key)])
+def stats_users():
+    """Distinct twitch_user values with last activity and heartbeat count.
+    NULL is reported as 'anonymous'. Ordered by last_ts DESC."""
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT
+                COALESCE(twitch_user, 'anonymous') AS user,
+                MAX(ts) AS last_ts,
+                COUNT(*) AS count
+            FROM heartbeats
+            GROUP BY twitch_user
+            ORDER BY last_ts DESC
+        """).fetchall()
+    return {
+        "users": [
+            {"user": r["user"], "last_ts": r["last_ts"], "count": r["count"]}
+            for r in rows
+        ]
+    }
+
+
 # ---------- Helpers ----------
 
 def _user_clause(user: Optional[str]):
