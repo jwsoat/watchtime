@@ -379,6 +379,13 @@ def _window_since(window: str) -> int:
         return _local_midnight()
     if window == "week":
         return int(time.time()) - 7 * 86400
+    if window == "month":
+        now = time.localtime()
+        month_start = time.struct_time((
+            now.tm_year, now.tm_mon, 1,
+            0, 0, 0, 0, 0, now.tm_isdst,
+        ))
+        return int(time.mktime(month_start))
     return 0  # 'all' or unknown
 
 

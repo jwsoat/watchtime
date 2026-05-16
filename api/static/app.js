@@ -7,7 +7,7 @@ const ACCOUNT_KEY = "watchtime_account";
 const state = {
   apiKey: localStorage.getItem(STORAGE_KEY) || null,
   user: null,         // selected account login, or null = all accounts
-  window: "today",    // 'today' | 'week' | 'all'
+  window: "today",    // 'today' | 'week' | 'month' | 'all'
   pollTimer: null,
 };
 
