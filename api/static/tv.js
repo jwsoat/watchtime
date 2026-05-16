@@ -108,18 +108,22 @@ function avatarColor(name) {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-function renderRankedList(rootId, items, valueFn, labelFn) {
+function renderRankedList(rootId, items, valueFn, labelFn, kind = "channel") {
   const root = $(rootId);
   root.innerHTML = "";
   const max = items[0] ? valueFn(items[0]) : 1;
   items.forEach((it, i) => {
     const seconds = valueFn(it);
     const label = labelFn(it);
+    const initial = label[0].toUpperCase();
+    const avatarInner = kind === "channel"
+      ? `${initial}<img src="https://unavatar.io/twitch/${encodeURIComponent(label)}" alt="" loading="lazy" onerror="this.remove()">`
+      : initial;
     const row = document.createElement("div");
     row.className = "ranked-row";
     row.innerHTML = `
       <div class="rank mono">#${i + 1}</div>
-      <div class="avatar" style="background:${avatarColor(label)}">${label[0].toUpperCase()}</div>
+      <div class="avatar" style="background:${avatarColor(label)}">${avatarInner}</div>
       <div class="name">${label}</div>
       <div class="value mono">${fmtDuration(seconds)}</div>
       <div class="bar"><span style="width:${(seconds / max * 100).toFixed(1)}%"></span></div>
@@ -183,6 +187,7 @@ async function loadPanel3() {
     data.categories.slice(0, 5),
     (c) => c.seconds,
     (c) => c.category,
+    "category",
   );
 }
 
