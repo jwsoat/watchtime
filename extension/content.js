@@ -40,6 +40,21 @@ function getTitle() {
   return el ? el.textContent.trim().slice(0, 512) : null;
 }
 
+function getTwitchUser() {
+  // Twitch stores the logged-in user as JSON in localStorage under
+  // "twilight.user". When logged out or unparseable, return null —
+  // heartbeats then bucket as "anonymous" server-side.
+  try {
+    const raw = localStorage.getItem("twilight.user");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const login = parsed?.login;
+    return typeof login === "string" && login.length > 0 ? login : null;
+  } catch {
+    return null;
+  }
+}
+
 function getVideoState() {
   // Twitch can have multiple <video> elements (picture-in-picture, ads).
   // Pick the largest visible one.
@@ -84,6 +99,7 @@ function tick() {
     title: getTitle(),
     state,
     tab_visible: tabVisible,
+    twitch_user: getTwitchUser(),
   };
 
   chrome.runtime.sendMessage({ type: "heartbeat", payload: heartbeat });
