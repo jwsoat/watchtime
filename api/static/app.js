@@ -162,6 +162,7 @@ document.querySelectorAll(".pill").forEach((pill) => {
     pill.classList.add("active");
     state.window = pill.dataset.window;
     updateTopChannels();
+    updateTopCategories();
   });
 });
 
@@ -192,6 +193,30 @@ async function updateTopChannels() {
     root.appendChild(row);
   });
   if (channels.length === 0) {
+    root.innerHTML = '<div style="color:var(--muted)">No data yet.</div>';
+  }
+}
+
+// ---------- Top categories ----------
+async function updateTopCategories() {
+  const data = await api(withUser(`/stats/categories?window=${state.window}`));
+  const cats = (data.categories || []).slice(0, 10);
+  const max = cats[0]?.seconds || 1;
+  const root = $("top-categories");
+  root.innerHTML = "";
+  cats.forEach((c, i) => {
+    const row = document.createElement("div");
+    row.className = "ranked-row";
+    row.innerHTML = `
+      <div class="rank mono">#${i + 1}</div>
+      <div class="avatar" style="background:${avatarColor(c.category)}">${c.category[0].toUpperCase()}</div>
+      <div class="name">${c.category}</div>
+      <div class="value mono">${fmtDuration(c.seconds)}</div>
+      <div class="bar"><span style="width:${(c.seconds / max * 100).toFixed(1)}%"></span></div>
+    `;
+    root.appendChild(row);
+  });
+  if (cats.length === 0) {
     root.innerHTML = '<div style="color:var(--muted)">No data yet.</div>';
   }
 }
@@ -278,6 +303,7 @@ async function refresh() {
     await Promise.all([
       updateHero(),
       updateTopChannels(),
+      updateTopCategories(),
       updateDailyChart(),
       updateQuickStats(),
       updateRecent(),
