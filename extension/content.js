@@ -72,7 +72,23 @@ function getVideoState() {
   };
 }
 
+let tickInterval = null;
+let firstTick = null;
+
+function stopTicking() {
+  if (tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+  if (firstTick) { clearTimeout(firstTick); firstTick = null; }
+}
+
 function tick() {
+  // If the extension was reloaded, this content script is orphaned. chrome.runtime.id
+  // becomes undefined and any chrome.* call throws "Extension context invalidated".
+  // Stop the timers; the next page navigation will inject a fresh script.
+  if (!chrome.runtime?.id) {
+    stopTicking();
+    return;
+  }
+
   const channel = getChannelFromUrl();
   if (!channel) return;
 
@@ -102,9 +118,14 @@ function tick() {
     twitch_user: getTwitchUser(),
   };
 
-  chrome.runtime.sendMessage({ type: "heartbeat", payload: heartbeat });
+  try {
+    chrome.runtime.sendMessage({ type: "heartbeat", payload: heartbeat });
+  } catch (e) {
+    // Race: id check passed but the context was invalidated between then and now.
+    stopTicking();
+  }
 }
 
-setInterval(tick, HEARTBEAT_MS);
+tickInterval = setInterval(tick, HEARTBEAT_MS);
 // Also tick shortly after load so we don't wait a full minute for the first hb
-setTimeout(tick, 5000);
+firstTick = setTimeout(tick, 5000);
