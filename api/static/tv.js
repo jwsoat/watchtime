@@ -98,6 +98,120 @@ if (state.apiKey) {
   showGate();
 }
 
-function startPanels() {
-  // Implemented in Task 21
+// ---------- Panels ----------
+let tvDailyChart = null;
+
+const AVATAR_COLORS = ["#9146FF", "#00f5d4", "#ff6b6b", "#feca57", "#5f27cd", "#48dbfb", "#1dd1a1", "#f368e0"];
+function avatarColor(name) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
+
+function renderRankedList(rootId, items, valueFn, labelFn) {
+  const root = $(rootId);
+  root.innerHTML = "";
+  const max = items[0] ? valueFn(items[0]) : 1;
+  items.forEach((it, i) => {
+    const seconds = valueFn(it);
+    const label = labelFn(it);
+    const row = document.createElement("div");
+    row.className = "ranked-row";
+    row.innerHTML = `
+      <div class="rank mono">#${i + 1}</div>
+      <div class="avatar" style="background:${avatarColor(label)}">${label[0].toUpperCase()}</div>
+      <div class="name">${label}</div>
+      <div class="value mono">${fmtDuration(seconds)}</div>
+      <div class="bar"><span style="width:${(seconds / max * 100).toFixed(1)}%"></span></div>
+    `;
+    root.appendChild(row);
+  });
+  if (items.length === 0) {
+    root.innerHTML = '<div style="color:var(--muted);font-size:24px;">No data yet.</div>';
+  }
+}
+
+async function loadPanel0() {
+  const data = await api("/stats/week");
+  renderRankedList(
+    "tv-week-channels",
+    data.channels.slice(0, 5),
+    (c) => c.seconds,
+    (c) => c.channel,
+  );
+}
+
+async function loadPanel1() {
+  const data = await api("/stats/daily?days=14");
+  const labels = data.days.map(d => d.day.slice(5));
+  const values = data.days.map(d => d.seconds / 3600);
+  const ctx = $("tv-daily").getContext("2d");
+  if (tvDailyChart) {
+    tvDailyChart.data.labels = labels;
+    tvDailyChart.data.datasets[0].data = values;
+    tvDailyChart.update();
+    return;
+  }
+  tvDailyChart = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets: [{ data: values, backgroundColor: "#9146FF", borderRadius: 6 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#efeff1", font: { size: 16 }, maxRotation: 0 }, grid: { display: false } },
+        y: { ticks: { color: "#efeff1", font: { size: 16 }, callback: (v) => v + "h" }, grid: { color: "#2f2f35" }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+async function loadPanel2() {
+  const data = await api("/stats/all");
+  renderRankedList(
+    "tv-all-channels",
+    data.channels.slice(0, 10),
+    (c) => c.seconds,
+    (c) => c.channel,
+  );
+}
+
+async function loadPanel3() {
+  const data = await api("/stats/categories?window=week");
+  renderRankedList(
+    "tv-categories",
+    data.categories.slice(0, 5),
+    (c) => c.seconds,
+    (c) => c.category,
+  );
+}
+
+const PANEL_LOADERS = [loadPanel0, loadPanel1, loadPanel2, loadPanel3];
+
+function showPanel(idx) {
+  document.querySelectorAll(".panel").forEach((p) => {
+    p.classList.toggle("active", parseInt(p.dataset.idx) === idx);
+  });
+  document.querySelectorAll(".dots span").forEach((d, i) => {
+    d.classList.toggle("active", i === idx);
+  });
+  PANEL_LOADERS[idx]().catch((e) => console.warn(`panel ${idx} failed`, e));
+}
+
+function startPanels() {
+  showPanel(0);
+  setInterval(() => {
+    state.panelIdx = (state.panelIdx + 1) % 4;
+    showPanel(state.panelIdx);
+  }, PANEL_MS);
+}
+
+// ---------- Cursor auto-hide ----------
+let cursorTimer = null;
+function showCursor() {
+  document.body.style.cursor = "auto";
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(() => { document.body.style.cursor = "none"; }, 3000);
+}
+document.addEventListener("mousemove", showCursor);
+showCursor();
