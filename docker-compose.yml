@@ -1,0 +1,14 @@
+services:
+  watch-api:
+    build: ./api
+    container_name: twitch-watch-api
+    restart: unless-stopped
+    environment:
+      - API_KEY=${API_KEY}
+      - DB_PATH=/data/watchtime.db
+      - HEARTBEAT_INTERVAL_SECONDS=60
+      - TZ=Pacific/Auckland
+    volumes:
+      - ./api/data:/data
+    ports:
+      - "8765:8000"
