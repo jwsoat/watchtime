@@ -110,6 +110,11 @@ const WINDOW_PARAMS = {
   alltime: "all",
 };
 
+// window value -> query key
+const WINDOW_TO_PARAM = Object.fromEntries(
+  Object.entries(WINDOW_PARAMS).map(([key, win]) => [win, key])
+);
+
 function applyWindowFromUrl() {
   const params = new URLSearchParams(location.search);
   for (const [key, win] of Object.entries(WINDOW_PARAMS)) {
@@ -120,6 +125,12 @@ function applyWindowFromUrl() {
       break;
     }
   }
+}
+
+function setWindowUrl(win) {
+  const key = WINDOW_TO_PARAM[win];
+  if (!key) return;
+  history.replaceState(null, "", `?${key}`);
 }
 
 // ---------- Boot ----------
@@ -183,6 +194,7 @@ document.querySelectorAll(".pill").forEach((pill) => {
     document.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
     pill.classList.add("active");
     state.window = pill.dataset.window;
+    setWindowUrl(state.window);
     updateTopChannels();
     updateTopCategories();
   });

@@ -172,6 +172,13 @@ def stats_week(include_passive: bool = True, user: Optional[str] = None):
     return _stats_since(since, include_passive, user)
 
 
+@app.get("/stats/month", dependencies=[Depends(require_api_key)])
+def stats_month(include_passive: bool = True, user: Optional[str] = None):
+    """Last 30 days (rolling), per channel."""
+    since = int(time.time()) - 30 * 86400
+    return _stats_since(since, include_passive, user)
+
+
 @app.get("/stats/all", dependencies=[Depends(require_api_key)])
 def stats_all(include_passive: bool = True, user: Optional[str] = None):
     return _stats_since(0, include_passive, user)
