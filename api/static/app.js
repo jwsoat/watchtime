@@ -101,9 +101,31 @@ $("account-picker").addEventListener("change", (e) => {
   refresh();
 });
 
+// ---------- URL window param ----------
+// Deep-link a time range via query string: ?today ?last7days ?last30days ?alltime
+const WINDOW_PARAMS = {
+  today: "today",
+  last7days: "week",
+  last30days: "month",
+  alltime: "all",
+};
+
+function applyWindowFromUrl() {
+  const params = new URLSearchParams(location.search);
+  for (const [key, win] of Object.entries(WINDOW_PARAMS)) {
+    if (params.has(key)) {
+      state.window = win;
+      document.querySelectorAll(".pill").forEach(p =>
+        p.classList.toggle("active", p.dataset.window === win));
+      break;
+    }
+  }
+}
+
 // ---------- Boot ----------
 async function boot() {
   await loadAccountPicker();
+  applyWindowFromUrl();
   await refresh();
   if (state.pollTimer) clearInterval(state.pollTimer);
   state.pollTimer = setInterval(refresh, POLL_MS);
