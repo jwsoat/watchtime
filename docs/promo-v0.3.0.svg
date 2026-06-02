@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640" height="400">
+  <!-- Background -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#0d2a1f"/>
+      <stop offset="100%" stop-color="#04140d"/>
+    </radialGradient>
+    <pattern id="dots" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="0.8" fill="#1a3a2a" opacity="0.6"/>
+    </pattern>
+    <linearGradient id="logoBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f3024"/>
+      <stop offset="100%" stop-color="#0a2218"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="640" height="400" fill="url(#bg)"/>
+  <rect width="640" height="400" fill="url(#dots)"/>
+
+  <!-- LIVE TRACKING tag -->
+  <circle cx="30" cy="29" r="4" fill="#ff5050"/>
+  <text x="42" y="33" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" fill="#7fc99a" letter-spacing="2">LIVE TRACKING</text>
+
+  <!-- Logo card -->
+  <rect x="60" y="115" rx="22" ry="22" width="180" height="180" fill="url(#logoBg)" stroke="#1f5a40" stroke-width="1.5"/>
+  <circle cx="225" cy="135" r="5" fill="#ff5050"/>
+
+  <!-- Eye -->
+  <ellipse cx="150" cy="195" rx="50" ry="22" fill="none" stroke="#4cd382" stroke-width="3"/>
+  <circle cx="150" cy="195" r="11" fill="#4cd382"/>
+  <circle cx="153" cy="192" r="3" fill="#0d2a1f"/>
+
+  <!-- Twitch + YouTube pulse waveform -->
+  <path d="M 80 245 L 105 245 L 115 230 L 125 260 L 135 240 L 145 250 L 155 232 L 165 258 L 175 244 L 185 248 L 200 245 L 220 245"
+        fill="none" stroke="#4cd382" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Headers -->
+  <text x="290" y="105" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="12" fill="#7fc99a" letter-spacing="3">SELF-HOSTED · OPEN SOURCE</text>
+
+  <!-- Title -->
+  <text x="290" y="170" font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="bold" font-size="48" fill="#4cd382">Twitch</text>
+  <text x="290" y="220" font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="bold" font-size="48" fill="#4cd382">+ YouTube</text>
+  <text x="290" y="262" font-family="ui-monospace, Menlo, Consolas, monospace" font-weight="bold" font-size="32" fill="#9ad6b1">Watch Time</text>
+
+  <!-- Tagline -->
+  <text x="290" y="298" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="14" fill="#7fc99a">Your data. Your dashboard.</text>
+  <line x1="290" y1="308" x2="380" y2="308" stroke="#4cd382" stroke-width="2"/>
+
+  <!-- Platform badges -->
+  <g>
+    <rect x="290" y="320" rx="10" ry="10" width="56" height="20" fill="rgba(145,70,255,0.18)"/>
+    <text x="318" y="334" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="bold" fill="#b58dff">TWITCH</text>
+
+    <rect x="354" y="320" rx="10" ry="10" width="68" height="20" fill="rgba(255,68,68,0.15)"/>
+    <text x="388" y="334" text-anchor="middle" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" font-weight="bold" fill="#ff6b6b">YOUTUBE</text>
+  </g>
+
+  <!-- Footer version -->
+  <text x="620" y="380" text-anchor="end" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11" fill="#5a8a72">v0.3.0 // ext + api + sqlite</text>
+</svg>

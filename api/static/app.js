@@ -1,7 +1,6 @@
 const POLL_MS = 10_000;
 const STORAGE_KEY = "watchtime_api_key";
-const TW_ACCOUNT_KEY = "watchtime_account";
-const YT_ACCOUNT_KEY = "watchtime_yt_account";
+const ACCOUNT_KEY = "watchtime_merged_account";
 const WINDOW_PARAMS = { today: "today", last7days: "week", last30days: "month", alltime: "all" };
 const WINDOW_TO_PARAM = Object.fromEntries(
   Object.entries(WINDOW_PARAMS).map(([k, v]) => [v, k])
@@ -60,58 +59,51 @@ $("gate-input").addEventListener("keydown", (e) => {
 
 // ---------- Account pickers ----------
 
-async function loadPickers() {
-  const [{ users: twUsers }, { users: ytUsers }] = await Promise.all([
-    api("/stats/users"),
-    api("/stats/youtube/users"),
-  ]);
+async function loadAccountPicker() {
+  const { accounts } = await api("/settings/user-accounts");
+  const select = $("account-picker");
+  select.innerHTML = "";
 
-  const twSelect = $("twitch-picker");
-  twSelect.innerHTML = "";
-  const twAll = document.createElement("option");
-  twAll.value = "";
-  twAll.textContent = "All Twitch accounts";
-  twSelect.appendChild(twAll);
-  for (const u of twUsers) {
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "All accounts";
+  select.appendChild(all);
+
+  for (const a of accounts) {
+    const platforms = [];
+    if (a.twitch_user) platforms.push("Twitch");
+    if (a.youtube_user) platforms.push("YouTube");
     const opt = document.createElement("option");
-    opt.value = u.user;
-    opt.textContent = `Twitch: ${u.user}`;
-    twSelect.appendChild(opt);
-  }
-  const savedTw = localStorage.getItem(TW_ACCOUNT_KEY);
-  if (savedTw && twUsers.find(u => u.user === savedTw)) {
-    twSelect.value = savedTw;
-    state.twUser = savedTw;
+    opt.value = String(a.id);
+    opt.textContent = `${a.label} (${platforms.join("+")})`;
+    opt.dataset.twitchUser = a.twitch_user || "";
+    opt.dataset.youtubeUser = a.youtube_user || "";
+    select.appendChild(opt);
   }
 
-  const ytSelect = $("youtube-picker");
-  ytSelect.innerHTML = "";
-  const ytAll = document.createElement("option");
-  ytAll.value = "";
-  ytAll.textContent = "All YouTube accounts";
-  ytSelect.appendChild(ytAll);
-  for (const u of ytUsers) {
-    const opt = document.createElement("option");
-    opt.value = u.user;
-    opt.textContent = `YouTube: ${u.user}`;
-    ytSelect.appendChild(opt);
-  }
-  const savedYt = localStorage.getItem(YT_ACCOUNT_KEY);
-  if (savedYt && ytUsers.find(u => u.user === savedYt)) {
-    ytSelect.value = savedYt;
-    state.ytUser = savedYt;
+  const saved = localStorage.getItem(ACCOUNT_KEY);
+  if (saved && accounts.find(a => String(a.id) === saved)) {
+    select.value = saved;
+    const opt = select.options[select.selectedIndex];
+    state.twUser = opt.dataset.twitchUser || null;
+    state.ytUser = opt.dataset.youtubeUser || null;
+  } else {
+    state.twUser = null;
+    state.ytUser = null;
   }
 }
 
-$("twitch-picker").addEventListener("change", (e) => {
-  state.twUser = e.target.value || null;
-  localStorage.setItem(TW_ACCOUNT_KEY, state.twUser ?? "");
-  refresh();
-});
-
-$("youtube-picker").addEventListener("change", (e) => {
-  state.ytUser = e.target.value || null;
-  localStorage.setItem(YT_ACCOUNT_KEY, state.ytUser ?? "");
+$("account-picker").addEventListener("change", (e) => {
+  const opt = e.target.options[e.target.selectedIndex];
+  if (e.target.value === "") {
+    state.twUser = null;
+    state.ytUser = null;
+    localStorage.removeItem(ACCOUNT_KEY);
+  } else {
+    state.twUser = opt.dataset.twitchUser || null;
+    state.ytUser = opt.dataset.youtubeUser || null;
+    localStorage.setItem(ACCOUNT_KEY, e.target.value);
+  }
   refresh();
 });
 
@@ -261,7 +253,7 @@ async function refresh() {
 // ---------- Boot ----------
 
 async function boot() {
-  await loadPickers();
+  await loadAccountPicker();
   applyWindowFromUrl();
   await refresh();
   if (state.pollTimer) clearInterval(state.pollTimer);

@@ -111,6 +111,13 @@ def init_db():
                 youtube_channel TEXT NOT NULL,
                 UNIQUE(twitch_channel, youtube_channel)
             );
+            CREATE TABLE IF NOT EXISTS user_accounts (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                label         TEXT NOT NULL,
+                twitch_user   TEXT,
+                youtube_user  TEXT,
+                UNIQUE(twitch_user, youtube_user)
+            );
         """)
         migrate_db(conn)
         conn.commit()
@@ -173,6 +180,12 @@ class YoutubeHeartbeatBatch(BaseModel):
 class ChannelLink(BaseModel):
     twitch_channel: str = Field(..., min_length=1, max_length=64)
     youtube_channel: str = Field(..., min_length=1, max_length=128)
+
+
+class UserAccount(BaseModel):
+    label: str = Field(..., min_length=1, max_length=64)
+    twitch_user: Optional[str] = Field(default=None, max_length=64)
+    youtube_user: Optional[str] = Field(default=None, max_length=128)
 
 
 # ---------- Endpoints ----------
@@ -337,6 +350,52 @@ def delete_channel_link(link_id: int):
         cur = conn.execute("DELETE FROM channel_links WHERE id = ?", (link_id,))
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="link not found")
+    return {"ok": True}
+
+
+@app.get("/settings/user-accounts", dependencies=[Depends(require_api_key)])
+def get_user_accounts():
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, label, twitch_user, youtube_user FROM user_accounts ORDER BY id"
+        ).fetchall()
+    return {
+        "accounts": [
+            {"id": r["id"], "label": r["label"],
+             "twitch_user": r["twitch_user"], "youtube_user": r["youtube_user"]}
+            for r in rows
+        ]
+    }
+
+
+@app.post("/settings/user-accounts", dependencies=[Depends(require_api_key)])
+def add_user_account(account: UserAccount):
+    tw = account.twitch_user.lower() if account.twitch_user else None
+    yt = account.youtube_user.lower() if account.youtube_user else None
+    if tw is None and yt is None:
+        raise HTTPException(status_code=400, detail="at least one of twitch_user or youtube_user required")
+    with db() as conn:
+        try:
+            cursor = conn.execute(
+                "INSERT INTO user_accounts (label, twitch_user, youtube_user) VALUES (?, ?, ?)",
+                (account.label, tw, yt),
+            )
+            account_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            row = conn.execute(
+                "SELECT id FROM user_accounts WHERE twitch_user IS ? AND youtube_user IS ?",
+                (tw, yt),
+            ).fetchone()
+            account_id = row["id"]
+    return {"ok": True, "id": account_id}
+
+
+@app.delete("/settings/user-accounts/{account_id}", dependencies=[Depends(require_api_key)])
+def delete_user_account(account_id: int):
+    with db() as conn:
+        cur = conn.execute("DELETE FROM user_accounts WHERE id = ?", (account_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="account not found")
     return {"ok": True}
 
 

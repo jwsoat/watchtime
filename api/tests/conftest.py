@@ -51,6 +51,7 @@ def _clean_youtube_data(app):
     try:
         conn.execute("DELETE FROM youtube_heartbeats")
         conn.execute("DELETE FROM channel_links")
+        conn.execute("DELETE FROM user_accounts")
         conn.commit()
     finally:
         conn.close()

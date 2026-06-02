@@ -11,8 +11,8 @@
     th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
     .add-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
     .add-row input { flex: 1; min-width: 140px; }
-    .del-btn { background: none; border: 1px solid #555; color: var(--muted); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
-    .del-btn:hover { border-color: #ff6b6b; color: #ff6b6b; }
+    .del-btn, .del-acct-btn { background: none; border: 1px solid #555; color: var(--muted); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+    .del-btn:hover, .del-acct-btn:hover { border-color: #ff6b6b; color: #ff6b6b; }
   </style>
 </head>
 <body>
@@ -37,6 +37,30 @@
         <a href="/youtube">YouTube</a>
         <a href="/settings" class="active">Settings</a>
       </nav>
+    </div>
+
+    <div class="card" style="max-width:640px; margin-bottom:16px">
+      <h2>Your accounts</h2>
+      <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
+        Tell the dashboard which Twitch and YouTube accounts are you. The merged view picker uses these labels.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Twitch user</th>
+            <th>YouTube user</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="accounts-tbody"></tbody>
+      </table>
+      <form id="add-account-form" class="add-row">
+        <input id="input-label" type="text" placeholder="Label (e.g. Me)" autocomplete="off">
+        <input id="input-account-twitch" type="text" placeholder="Twitch handle (optional)" autocomplete="off">
+        <input id="input-account-youtube" type="text" placeholder="YouTube handle (optional)" autocomplete="off">
+        <button type="submit">Add account</button>
+      </form>
     </div>
 
     <div class="card" style="max-width:640px">
