@@ -75,6 +75,29 @@ async function loadLinks() {
   });
 }
 
+async function loadAccounts() {
+  const { accounts } = await apiReq("GET", "/settings/user-accounts");
+  const tbody = $("accounts-tbody");
+  if (!accounts.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted); padding:12px 0">No accounts configured.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = accounts.map(a => `
+    <tr>
+      <td>${escapeHtml(a.label)}</td>
+      <td>${a.twitch_user ? escapeHtml(a.twitch_user) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${a.youtube_user ? escapeHtml(a.youtube_user) : '<span style="color:var(--muted)">—</span>'}</td>
+      <td><button class="del-acct-btn" data-id="${a.id}">Delete</button></td>
+    </tr>
+  `).join("");
+  tbody.querySelectorAll(".del-acct-btn").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await apiReq("DELETE", `/settings/user-accounts/${btn.dataset.id}`);
+      loadAccounts().catch(console.error);
+    });
+  });
+}
+
 $("add-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const twitch = $("input-twitch").value.trim().toLowerCase();
@@ -89,8 +112,34 @@ $("add-form").addEventListener("submit", async (e) => {
   loadLinks().catch(console.error);
 });
 
+$("add-account-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const label = $("input-label").value.trim();
+  const twitch = $("input-account-twitch").value.trim().toLowerCase();
+  const youtube = $("input-account-youtube").value.trim().toLowerCase();
+  if (!label) return;
+  if (!twitch && !youtube) {
+    alert("Provide at least a Twitch or YouTube handle.");
+    return;
+  }
+  const body = { label };
+  if (twitch) body.twitch_user = twitch;
+  if (youtube) body.youtube_user = youtube;
+  try {
+    await apiReq("POST", "/settings/user-accounts", body);
+  } catch (err) {
+    alert(`Failed: ${err.message}`);
+    return;
+  }
+  $("input-label").value = "";
+  $("input-account-twitch").value = "";
+  $("input-account-youtube").value = "";
+  loadAccounts().catch(console.error);
+});
+
 async function boot() {
   await loadLinks();
+  await loadAccounts();
 }
 
 if (state.apiKey) {
