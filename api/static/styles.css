@@ -254,6 +254,11 @@ body.tv .dots span.active { background: var(--purple); }
 .topnav a:hover { color: var(--text); }
 .topnav a.active { color: var(--text); background: var(--surface); }
 
+/* YouTube page overrides */
+body.yt-page .ranked-row .bar > span { background: var(--yt-red); }
+body.yt-page .pill.active { background: var(--yt-red); border-color: var(--yt-red); }
+body.yt-page .pill:hover { border-color: var(--yt-red); }
+
 /* Platform badges */
 .platform-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; vertical-align: middle; }
 .platform-badge.twitch { background: rgba(145,70,255,0.15); color: #9146FF; }

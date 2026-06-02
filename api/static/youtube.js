@@ -1,3 +1,5 @@
+document.body.classList.add("yt-page");
+
 const POLL_MS = 10_000;
 const STORAGE_KEY = "watchtime_api_key";
 const YT_ACCOUNT_KEY = "watchtime_yt_account";
@@ -124,6 +126,35 @@ function avatarColor(name) {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+async function updateHero() {
+  const [todayData, allData, nowData] = await Promise.all([
+    api(withUser("/stats/youtube/today")),
+    api(withUser("/stats/youtube/all")),
+    api(withUser("/stats/youtube/now")),
+  ]);
+
+  const todaySecs = todayData.channels.reduce((s, c) => s + c.seconds, 0);
+  $("today-value").textContent = fmtDuration(todaySecs);
+
+  const top = todayData.channels[0];
+  $("top-channel").textContent = top ? top.channel : "—";
+  $("top-seconds").textContent = top ? fmtDuration(top.seconds) : "0 seconds";
+
+  $("qs-total").textContent = fmtDuration(allData.channels.reduce((s, c) => s + c.seconds, 0));
+  $("qs-channels").textContent = allData.channels.length.toString();
+
+  if (nowData.channel) {
+    $("live-indicator").classList.remove("hidden");
+    $("live-label").textContent = nowData.youtube_user
+      ? `${nowData.youtube_user}'s now watching`
+      : "Now watching";
+    $("live-channel").textContent = nowData.channel;
+    $("live-title").textContent = nowData.title || "";
+  } else {
+    $("live-indicator").classList.add("hidden");
+  }
+}
+
 async function updateTopChannels() {
   const data = await api(withUser(`/stats/youtube/${state.window}`));
   const channels = data.channels.slice(0, 10);
@@ -135,7 +166,7 @@ async function updateTopChannels() {
     row.className = "ranked-row";
     row.innerHTML = `
       <div class="rank mono">#${i + 1}</div>
-      <div class="avatar" style="background:${avatarColor(c.channel)}">${c.channel[0].toUpperCase()}</div>
+      <div class="avatar" style="background:${avatarColor(c.channel)}">${c.channel[0].toUpperCase()}<img src="https://unavatar.io/youtube/${encodeURIComponent(c.channel)}" alt="" loading="lazy" onerror="this.remove()"></div>
       <div class="name">${c.channel}</div>
       <div class="value mono">${fmtDuration(c.seconds)}</div>
       <div class="bar"><span style="width:${(c.seconds / max * 100).toFixed(1)}%"></span></div>
@@ -145,39 +176,67 @@ async function updateTopChannels() {
   if (channels.length === 0) root.innerHTML = '<div style="color:var(--muted)">No data yet.</div>';
 }
 
-async function updateTopPlaylists() {
-  const data = await api(withUser(`/stats/youtube/playlists?window=${state.window}`));
-  const playlists = data.playlists.slice(0, 10);
-  const max = playlists[0]?.seconds || 1;
-  const root = $("top-playlists");
+async function updateTopVideos() {
+  const data = await api(withUser(`/stats/youtube/videos?window=${state.window}`));
+  const videos = data.videos.slice(0, 10);
+  const max = videos[0]?.seconds || 1;
+  const root = $("top-videos");
   root.innerHTML = "";
-  playlists.forEach((p, i) => {
+  videos.forEach((v, i) => {
     const row = document.createElement("div");
     row.className = "ranked-row";
     row.innerHTML = `
       <div class="rank mono">#${i + 1}</div>
-      <div class="avatar" style="background:${avatarColor(p.playlist_id)}">${p.playlist_id[0].toUpperCase()}</div>
-      <div class="name">${p.playlist_id}</div>
-      <div class="value mono">${fmtDuration(p.seconds)}</div>
-      <div class="bar"><span style="width:${(p.seconds / max * 100).toFixed(1)}%"></span></div>
+      <div class="avatar" style="background:${avatarColor(v.title)}">▶</div>
+      <div class="name">${v.title}</div>
+      <div class="value mono">${fmtDuration(v.seconds)}</div>
+      <div class="bar"><span style="width:${(v.seconds / max * 100).toFixed(1)}%"></span></div>
     `;
     root.appendChild(row);
   });
-  if (playlists.length === 0) root.innerHTML = '<div style="color:var(--muted)">No playlist data yet.</div>';
+  if (videos.length === 0) root.innerHTML = '<div style="color:var(--muted)">No data yet.</div>';
 }
 
-async function updateHero() {
-  const [todayData, allData] = await Promise.all([
-    api(withUser("/stats/youtube/today")),
-    api(withUser("/stats/youtube/all")),
-  ]);
-  const todaySecs = todayData.channels.reduce((s, c) => s + c.seconds, 0);
-  $("today-value").textContent = fmtDuration(todaySecs);
-  const top = todayData.channels[0];
-  $("top-channel").textContent = top ? top.channel : "—";
-  $("top-seconds").textContent = top ? fmtDuration(top.seconds) : "0 seconds";
-  $("qs-total").textContent = fmtDuration(allData.channels.reduce((s, c) => s + c.seconds, 0));
-  $("qs-channels").textContent = allData.channels.length.toString();
+let dailyChart = null;
+
+async function updateDailyChart() {
+  const data = await api(withUser("/stats/youtube/daily?days=30"));
+  const labels = data.days.map(d => d.day.slice(5));
+  const values = data.days.map(d => d.seconds / 3600);
+
+  if (dailyChart) {
+    dailyChart.data.labels = labels;
+    dailyChart.data.datasets[0].data = values;
+    dailyChart.update();
+    return;
+  }
+  const ctx = $("daily-chart").getContext("2d");
+  dailyChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: "#FF0050", borderRadius: 4 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#adadb8", maxRotation: 0 }, grid: { display: false } },
+        y: {
+          ticks: { color: "#adadb8", callback: (v) => v + "h" },
+          grid: { color: "#2f2f35" },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
+
+async function updateLongestDay() {
+  const data = await api(withUser("/stats/youtube/daily?days=365"));
+  const longest = data.days.reduce((max, d) => (d.seconds > max ? d.seconds : max), 0);
+  $("qs-longest").textContent = fmtDuration(longest);
 }
 
 document.querySelectorAll(".pill").forEach((pill) => {
@@ -187,13 +246,19 @@ document.querySelectorAll(".pill").forEach((pill) => {
     state.window = pill.dataset.window;
     setWindowUrl(state.window);
     updateTopChannels();
-    updateTopPlaylists();
+    updateTopVideos();
   });
 });
 
 async function refresh() {
   try {
-    await Promise.all([updateHero(), updateTopChannels(), updateTopPlaylists()]);
+    await Promise.all([
+      updateHero(),
+      updateTopChannels(),
+      updateTopVideos(),
+      updateDailyChart(),
+      updateLongestDay(),
+    ]);
   } catch (e) {
     console.warn("refresh failed", e);
   }

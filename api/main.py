@@ -306,6 +306,60 @@ def yt_stats_playlists(
     }
 
 
+@app.get("/stats/youtube/now", dependencies=[Depends(require_api_key)])
+def yt_stats_now(user: Optional[str] = None):
+    cutoff = int(time.time()) - 120
+    user_sql, user_params = _yt_user_clause(user)
+    with db() as conn:
+        row = conn.execute(f"""
+            SELECT channel, title, youtube_user
+            FROM youtube_heartbeats
+            WHERE ts >= ? AND state = 'active' {user_sql}
+            ORDER BY ts DESC LIMIT 1
+        """, (cutoff, *user_params)).fetchone()
+    if not row:
+        return {"channel": None}
+    return {
+        "channel": row["channel"],
+        "title": row["title"],
+        "youtube_user": row["youtube_user"],
+    }
+
+
+@app.get("/stats/youtube/daily", dependencies=[Depends(require_api_key)])
+def yt_stats_daily(days: int = 30, user: Optional[str] = None):
+    since = int(time.time()) - days * 86400
+    user_sql, user_params = _yt_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+            FROM youtube_heartbeats
+            WHERE ts >= ? {user_sql}
+            GROUP BY day ORDER BY day ASC
+        """, (since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "days": [{"day": r["day"], "seconds": _seconds_from_count(r["n"])} for r in rows],
+    }
+
+
+@app.get("/stats/youtube/videos", dependencies=[Depends(require_api_key)])
+def yt_stats_videos(window: str = "today", user: Optional[str] = None):
+    since = _window_since(window)
+    user_sql, user_params = _yt_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT title, COUNT(*) AS n
+            FROM youtube_heartbeats
+            WHERE ts >= ? AND title IS NOT NULL {user_sql}
+            GROUP BY title ORDER BY n DESC LIMIT 10
+        """, (since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "videos": [{"title": r["title"], "seconds": _seconds_from_count(r["n"])} for r in rows],
+    }
+
+
 def _seconds_from_count(n: int) -> int:
     return n * HEARTBEAT_INTERVAL
 
