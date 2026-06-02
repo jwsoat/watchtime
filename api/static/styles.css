@@ -243,3 +243,14 @@ body.tv .dots span {
   transition: background 0.3s;
 }
 body.tv .dots span.active { background: var(--purple); }
+
+/* Navigation */
+.topnav { display: flex; gap: 16px; align-items: center; margin: 0 auto 0 24px; }
+.topnav a { color: var(--muted); text-decoration: none; font-size: 13px; padding: 4px 8px; border-radius: 4px; }
+.topnav a:hover { color: var(--text); }
+.topnav a.active { color: var(--text); background: var(--surface); }
+
+/* Platform badges */
+.platform-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; vertical-align: middle; }
+.platform-badge.twitch { background: rgba(145,70,255,0.15); color: #9146FF; }
+.platform-badge.youtube { background: rgba(255,68,68,0.12); color: #FF4444; }
