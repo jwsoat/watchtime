@@ -9,6 +9,8 @@
   --purple: #9146FF;
   --purple-hover: #772ce8;
   --hero-grad: linear-gradient(135deg, #9146FF, #5c16c5);
+  --yt-red: #FF0050;
+  --yt-hero-grad: linear-gradient(135deg, #FF0050 0%, #C2185B 50%, #9146FF 100%);
   --text: #efeff1;
   --muted: #adadb8;
   --live: #eb0400;
@@ -64,6 +66,8 @@ html, body {
 }
 
 /* ---------- Hero ---------- */
+.hero.yt { background: var(--yt-hero-grad); }
+
 .hero {
   grid-column: 1 / -1;
   background: var(--hero-grad);
@@ -253,4 +257,4 @@ body.tv .dots span.active { background: var(--purple); }
 /* Platform badges */
 .platform-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; vertical-align: middle; }
 .platform-badge.twitch { background: rgba(145,70,255,0.15); color: #9146FF; }
-.platform-badge.youtube { background: rgba(255,68,68,0.12); color: #FF4444; }
+.platform-badge.youtube { background: rgba(255,0,80,0.15); color: #FF0050; }

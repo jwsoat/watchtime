@@ -117,7 +117,7 @@ function fmtDuration(seconds) {
   return plural(s, "second");
 }
 
-const AVATAR_COLORS = ["#FF4444", "#FF8C00", "#FFD700", "#48dbfb", "#1dd1a1", "#f368e0", "#5f27cd", "#ff6b6b"];
+const AVATAR_COLORS = ["#FF0050", "#E91E63", "#C2185B", "#AD1457", "#9146FF", "#7B1FA2", "#f368e0", "#ff6b6b"];
 function avatarColor(name) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
