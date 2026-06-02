@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Watchtime</title>
+  <title>YouTube Watchtime</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <div id="gate" class="gate hidden">
     <div class="card">
-      <h2>Watchtime</h2>
+      <h2>YouTube Watchtime</h2>
       <p style="color:var(--muted); margin-top:8px; font-size:13px;">
         Paste your API key to unlock the dashboard.
       </p>
@@ -21,7 +21,13 @@
 
   <div id="app" class="page hidden">
     <div class="topbar">
-      <h1>Watchtime</h1>
+      <h1>YouTube Watchtime</h1>
+      <nav class="topnav">
+        <a href="/">Merged</a>
+        <a href="/twitch">Twitch</a>
+        <a href="/youtube" class="active">YouTube</a>
+        <a href="/settings">Settings</a>
+      </nav>
       <select id="account-picker" class="account-picker"></select>
     </div>
 

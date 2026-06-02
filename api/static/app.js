@@ -28,6 +28,18 @@ async function api(path) {
   return res.json();
 }
 
+function withTwUser(url) {
+  if (!state.twUser) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}user=${encodeURIComponent(state.twUser)}`;
+}
+
+function withYtUser(url) {
+  if (!state.ytUser) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}user=${encodeURIComponent(state.ytUser)}`;
+}
+
 function showGate(errMsg = "") {
   $("gate").classList.remove("hidden");
   $("app").classList.add("hidden");
@@ -56,8 +68,6 @@ $("gate-submit").addEventListener("click", async () => {
 $("gate-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("gate-submit").click();
 });
-
-// ---------- Account pickers ----------
 
 async function loadAccountPicker() {
   const { accounts } = await api("/settings/user-accounts");
@@ -107,8 +117,6 @@ $("account-picker").addEventListener("change", (e) => {
   refresh();
 });
 
-// ---------- Window ----------
-
 function applyWindowFromUrl() {
   const params = new URLSearchParams(location.search);
   for (const [key, win] of Object.entries(WINDOW_PARAMS)) {
@@ -137,8 +145,6 @@ document.querySelectorAll(".pill").forEach((pill) => {
   });
 });
 
-// ---------- Formatters ----------
-
 function fmtDuration(seconds) {
   if (!seconds) return "0 seconds";
   const h = Math.floor(seconds / 3600);
@@ -157,7 +163,108 @@ function avatarColor(name) {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-// ---------- Merge ----------
+async function updateHero() {
+  const [twToday, ytToday, twNow, ytNow] = await Promise.all([
+    api(withTwUser("/stats/today")),
+    api(withYtUser("/stats/youtube/today")),
+    api(withTwUser("/stats/now")),
+    api(withYtUser("/stats/youtube/now")),
+  ]);
+
+  const twSecs = twToday.channels.reduce((s, c) => s + c.seconds, 0);
+  const ytSecs = ytToday.channels.reduce((s, c) => s + c.seconds, 0);
+  $("today-value").textContent = fmtDuration(twSecs + ytSecs);
+
+  const allToday = [
+    ...twToday.channels.map(c => ({ ...c, platform: "twitch" })),
+    ...ytToday.channels.map(c => ({ ...c, platform: "youtube" })),
+  ].sort((a, b) => b.seconds - a.seconds);
+  const top = allToday[0];
+  $("top-channel").textContent = top ? top.channel : "—";
+  $("top-seconds").textContent = top ? fmtDuration(top.seconds) : "0 seconds";
+
+  const now = twNow.channel ? twNow : (ytNow.channel ? ytNow : null);
+  if (now) {
+    $("live-indicator").classList.remove("hidden");
+    const who = now.twitch_user || now.youtube_user;
+    $("live-label").textContent = who ? `${who}'s now watching` : "Now watching";
+    $("live-channel").textContent = now.channel;
+    $("live-title").textContent = now.title || "";
+    $("live-category").textContent = now.category || "";
+  } else {
+    $("live-indicator").classList.add("hidden");
+  }
+}
+
+async function updateQuickStats() {
+  const [twAll, ytAll, twDaily, ytDaily] = await Promise.all([
+    api(withTwUser("/stats/all")),
+    api(withYtUser("/stats/youtube/all")),
+    api(withTwUser("/stats/daily?days=365")),
+    api(withYtUser("/stats/youtube/daily?days=365")),
+  ]);
+
+  const totalSecs =
+    twAll.channels.reduce((s, c) => s + c.seconds, 0) +
+    ytAll.channels.reduce((s, c) => s + c.seconds, 0);
+  $("qs-total").textContent = fmtDuration(totalSecs);
+
+  const allChannels = new Set([
+    ...twAll.channels.map(c => c.channel),
+    ...ytAll.channels.map(c => c.channel),
+  ]);
+  $("qs-channels").textContent = allChannels.size.toString();
+
+  const dayMap = {};
+  for (const d of twDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
+  for (const d of ytDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
+  const longest = Object.values(dayMap).reduce((max, s) => (s > max ? s : max), 0);
+  $("qs-longest").textContent = fmtDuration(longest);
+}
+
+let dailyChart = null;
+
+async function updateDailyChart() {
+  const [twDaily, ytDaily] = await Promise.all([
+    api(withTwUser("/stats/daily?days=30")),
+    api(withYtUser("/stats/youtube/daily?days=30")),
+  ]);
+
+  const dayMap = {};
+  for (const d of twDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
+  for (const d of ytDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
+  const days = Object.keys(dayMap).sort();
+  const labels = days.map(d => d.slice(5));
+  const values = days.map(d => dayMap[d] / 3600);
+
+  if (dailyChart) {
+    dailyChart.data.labels = labels;
+    dailyChart.data.datasets[0].data = values;
+    dailyChart.update();
+    return;
+  }
+  const ctx = $("daily-chart").getContext("2d");
+  dailyChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: "#9146FF", borderRadius: 4 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: "#adadb8", maxRotation: 0 }, grid: { display: false } },
+        y: {
+          ticks: { color: "#adadb8", callback: (v) => v + "h" },
+          grid: { color: "#2f2f35" },
+          beginAtZero: true,
+        },
+      },
+    },
+  });
+}
 
 function buildMergedRows(twChannels, ytChannels, links) {
   const linkMap = {};
@@ -205,12 +312,9 @@ function buildMergedRows(twChannels, ytChannels, links) {
 }
 
 async function updateMerged() {
-  const twParam = state.twUser ? `?user=${encodeURIComponent(state.twUser)}` : "";
-  const ytParam = state.ytUser ? `?user=${encodeURIComponent(state.ytUser)}` : "";
-
   const [twData, ytData, linksData] = await Promise.all([
-    api(`/stats/${state.window}${twParam}`),
-    api(`/stats/youtube/${state.window}${ytParam}`),
+    api(withTwUser(`/stats/${state.window}`)),
+    api(withYtUser(`/stats/youtube/${state.window}`)),
     api("/settings/channel-links"),
   ]);
 
@@ -240,17 +344,18 @@ async function updateMerged() {
   }
 }
 
-// ---------- Refresh ----------
-
 async function refresh() {
   try {
-    await updateMerged();
+    await Promise.all([
+      updateHero(),
+      updateMerged(),
+      updateDailyChart(),
+      updateQuickStats(),
+    ]);
   } catch (e) {
     console.warn("refresh failed", e);
   }
 }
-
-// ---------- Boot ----------
 
 async function boot() {
   await loadAccountPicker();
