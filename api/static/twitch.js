@@ -219,7 +219,7 @@ async function updateTopChannels() {
     row.className = "ranked-row";
     row.innerHTML = `
       <div class="rank mono">#${i + 1}</div>
-      <div class="avatar" style="background:${avatarColor(c.channel)}">${c.channel[0].toUpperCase()}<img src="https://unavatar.io/twitch/${encodeURIComponent(c.channel)}" alt="" loading="lazy" onerror="this.remove()"></div>
+      <div class="avatar" style="background:${avatarColor(c.channel)}">${c.channel[0].toUpperCase()}<img src="https://unavatar.io/twitch/${encodeURIComponent(c.channel)}" alt="" onerror="this.remove()"></div>
       <div class="name">${c.channel}</div>
       <div class="value mono">${fmtDuration(c.seconds)}</div>
       <div class="bar"><span style="width:${(c.seconds / max * 100).toFixed(1)}%"></span></div>
