@@ -137,6 +137,18 @@ $("add-account-form").addEventListener("submit", async (e) => {
   loadAccounts().catch(console.error);
 });
 
+$("auto-link-btn").addEventListener("click", async () => {
+  const status = $("auto-link-status");
+  status.textContent = "Working...";
+  try {
+    const res = await apiReq("POST", "/settings/user-accounts/auto-link");
+    status.textContent = `Created ${res.created}, skipped ${res.skipped} (already linked) — ${res.total_pairs} pairs found.`;
+    loadAccounts().catch(console.error);
+  } catch (err) {
+    status.textContent = `Failed: ${err.message}`;
+  }
+});
+
 async function boot() {
   await loadLinks();
   await loadAccounts();

@@ -399,6 +399,37 @@ def delete_user_account(account_id: int):
     return {"ok": True}
 
 
+@app.post("/settings/user-accounts/auto-link", dependencies=[Depends(require_api_key)])
+def auto_link_user_accounts():
+    """
+    Detect Twitch+YouTube account pairs that came from the same Chrome extension
+    install (same client_id) and add them to user_accounts. Idempotent — pairs
+    already linked are skipped via UNIQUE constraint.
+    """
+    with db() as conn:
+        pairs = conn.execute("""
+            SELECT DISTINCT h.twitch_user, y.youtube_user
+            FROM heartbeats h
+            JOIN youtube_heartbeats y ON h.client_id = y.client_id
+            WHERE h.twitch_user IS NOT NULL AND y.youtube_user IS NOT NULL
+        """).fetchall()
+
+        created = 0
+        skipped = 0
+        for row in pairs:
+            tw = row["twitch_user"]
+            yt = row["youtube_user"]
+            try:
+                conn.execute(
+                    "INSERT INTO user_accounts (label, twitch_user, youtube_user) VALUES (?, ?, ?)",
+                    (f"Auto: {tw} / {yt}", tw, yt),
+                )
+                created += 1
+            except sqlite3.IntegrityError:
+                skipped += 1
+    return {"ok": True, "created": created, "skipped": skipped, "total_pairs": len(pairs)}
+
+
 @app.get("/stats/today", dependencies=[Depends(require_api_key)])
 def stats_today(include_passive: bool = True, user: Optional[str] = None):
     """Total watch time today (server local time) per channel."""

@@ -61,6 +61,13 @@
         <input id="input-account-youtube" type="text" placeholder="YouTube handle (optional)" autocomplete="off">
         <button type="submit">Add account</button>
       </form>
+      <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border)">
+        <p style="color:var(--muted); font-size:13px; margin-bottom:10px">
+          Auto-link Twitch and YouTube accounts the extension saw from the same browser install.
+        </p>
+        <button id="auto-link-btn" type="button">Auto-link from extension</button>
+        <span id="auto-link-status" style="margin-left:12px; color:var(--muted); font-size:12px"></span>
+      </div>
     </div>
 
     <div class="card" style="max-width:640px">
