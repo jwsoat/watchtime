@@ -6,14 +6,17 @@ watch time as COUNT(heartbeats) * interval.
 """
 import os
 import pathlib
+import re
 import sqlite3
 import time
+import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -193,6 +196,33 @@ class UserAccount(BaseModel):
 @app.get("/health")
 def health():
     return {"ok": True, "interval": HEARTBEAT_INTERVAL}
+
+
+_AVATAR_DIR = pathlib.Path(os.environ.get("DB_PATH", "/data/watchtime.db")).parent / "avatars"
+_AVATAR_TTL = 86400 * 7  # 7 days
+
+
+@app.get("/avatars/{platform}/{channel}")
+def get_avatar(platform: str, channel: str):
+    if platform not in ("twitch", "youtube"):
+        raise HTTPException(status_code=404)
+    _AVATAR_DIR.mkdir(exist_ok=True)
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", channel.lower())
+    cache_file = _AVATAR_DIR / f"{platform}_{safe}"
+    if cache_file.exists() and time.time() - cache_file.stat().st_mtime < _AVATAR_TTL:
+        data = cache_file.read_bytes()
+        ct = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
+        return Response(content=data, media_type=ct, headers={"Cache-Control": "public, max-age=604800"})
+    try:
+        url = f"https://unavatar.io/{platform}/{urllib.parse.quote(channel)}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = resp.read()
+            ct = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+            cache_file.write_bytes(data)
+            return Response(content=data, media_type=ct, headers={"Cache-Control": "public, max-age=604800"})
+    except Exception:
+        raise HTTPException(status_code=404)
 
 
 @app.post("/heartbeat", dependencies=[Depends(require_api_key)])
