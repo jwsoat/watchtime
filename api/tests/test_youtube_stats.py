@@ -98,6 +98,24 @@ def test_youtube_playlists_exclude_passive(client, auth_headers, db):
     assert playlists["PLabc"] == 60
 
 
+def test_youtube_stats_today_exclude_passive(client, auth_headers, db):
+    now = int(time.time())
+    insert_youtube_heartbeat(db, ts=now - 10, channel="a", state="active")
+    insert_youtube_heartbeat(db, ts=now - 20, channel="a", state="passive")
+    db.commit()
+    res = client.get("/stats/youtube/today?include_passive=false", headers=auth_headers)
+    data = res.json()
+    assert data["channels"][0]["channel"] == "a"
+    assert data["channels"][0]["seconds"] == 60  # only the active heartbeat
+
+
 def test_youtube_stats_requires_auth(client):
-    for path in ["/stats/youtube/users", "/stats/youtube/today", "/stats/youtube/playlists"]:
+    for path in [
+        "/stats/youtube/users",
+        "/stats/youtube/today",
+        "/stats/youtube/week",
+        "/stats/youtube/month",
+        "/stats/youtube/all",
+        "/stats/youtube/playlists",
+    ]:
         assert client.get(path).status_code == 401
