@@ -139,6 +139,22 @@ class HeartbeatBatch(BaseModel):
     heartbeats: list[Heartbeat]
 
 
+class YoutubeHeartbeat(BaseModel):
+    ts: int = Field(..., description="Unix seconds, UTC")
+    channel: str = Field(..., min_length=1, max_length=128)
+    title: Optional[str] = Field(default=None, max_length=512)
+    video_id: Optional[str] = Field(default=None, max_length=16)
+    playlist_id: Optional[str] = Field(default=None, max_length=64)
+    state: str = Field(..., pattern="^(active|passive)$")
+    tab_visible: bool
+    client_id: str = Field(..., min_length=1, max_length=64)
+    youtube_user: Optional[str] = Field(default=None, max_length=128)
+
+
+class YoutubeHeartbeatBatch(BaseModel):
+    heartbeats: list[YoutubeHeartbeat]
+
+
 # ---------- Endpoints ----------
 
 @app.get("/health")
@@ -171,6 +187,23 @@ def heartbeats_batch(batch: HeartbeatBatch):
             "INSERT INTO heartbeats "
             "(ts, channel, category, title, state, tab_visible, client_id, twitch_user) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    return {"ok": True, "stored": len(rows)}
+
+
+@app.post("/youtube/heartbeats", dependencies=[Depends(require_api_key)])
+def youtube_heartbeats_batch(batch: YoutubeHeartbeatBatch):
+    rows = [
+        (hb.ts, hb.channel.lower(), hb.title, hb.video_id, hb.playlist_id,
+         hb.state, int(hb.tab_visible), hb.youtube_user, hb.client_id)
+        for hb in batch.heartbeats
+    ]
+    with db() as conn:
+        conn.executemany(
+            "INSERT INTO youtube_heartbeats "
+            "(ts, channel, title, video_id, playlist_id, state, tab_visible, youtube_user, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     return {"ok": True, "stored": len(rows)}
