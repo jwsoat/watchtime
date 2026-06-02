@@ -214,7 +214,7 @@ def get_avatar(platform: str, channel: str):
         ct = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
         return Response(content=data, media_type=ct, headers={"Cache-Control": "public, max-age=604800"})
     try:
-        url = f"https://unavatar.io/{platform}/{urllib.parse.quote(channel)}"
+        url = f"https://unavatar.io/{platform}/{urllib.parse.quote(channel)}?fallback=404"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = resp.read()
