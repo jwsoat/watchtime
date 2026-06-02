@@ -3,11 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Watchtime</title>
+  <title>Watchtime — Merged</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <!-- Auth gate (shown first if no key in localStorage) -->
   <div id="gate" class="gate hidden">
     <div class="card">
       <h2>Watchtime</h2>
@@ -20,38 +19,22 @@
     </div>
   </div>
 
-  <!-- Main dashboard -->
   <div id="app" class="page hidden">
     <div class="topbar">
       <h1>Watchtime</h1>
-      <select id="account-picker" class="account-picker"></select>
+      <nav class="topnav">
+        <a href="/" class="active">Merged</a>
+        <a href="/twitch">Twitch</a>
+        <a href="/youtube">YouTube</a>
+        <a href="/settings">Settings</a>
+      </nav>
     </div>
 
-    <!-- Hero -->
-    <div class="card hero">
-      <div>
-        <div class="today-label">Today</div>
-        <div class="today-value mono" id="today-value">0h 0m</div>
-      </div>
-      <div class="top">
-        <div class="today-label">Top today</div>
-        <div class="top-channel" id="top-channel">—</div>
-        <div class="top-seconds mono" id="top-seconds">0m</div>
-      </div>
+    <div style="display:flex; gap:12px; margin-bottom:8px; flex-wrap:wrap;">
+      <select id="twitch-picker" class="account-picker"></select>
+      <select id="youtube-picker" class="account-picker"></select>
     </div>
 
-    <!-- Now-watching card (visible only while a heartbeat lands in last 120s) -->
-    <div class="card live-card hidden" id="live-indicator">
-      <div class="live-meta">
-        <span class="dot"></span>
-        <span id="live-label">Now watching</span>
-      </div>
-      <div class="live-channel-name" id="live-channel"></div>
-      <div class="live-title" id="live-title"></div>
-      <div class="live-category" id="live-category"></div>
-    </div>
-
-    <!-- Time-range pills -->
     <div class="pills">
       <button class="pill active" data-window="today">Today</button>
       <button class="pill" data-window="week">Last 7 days</button>
@@ -59,45 +42,12 @@
       <button class="pill" data-window="all">All-time</button>
     </div>
 
-    <!-- Two-column grid -->
-    <div class="grid">
-      <div class="card">
-        <h2>Top channels</h2>
-        <div id="top-channels" class="ranked"></div>
-      </div>
-      <div class="card">
-        <h2>Top categories</h2>
-        <div id="top-categories" class="ranked"></div>
-      </div>
-      <div class="card">
-        <h2>Daily — last 30 days</h2>
-        <div class="chart-box"><canvas id="daily-chart"></canvas></div>
-      </div>
-      <div class="card">
-        <h2>Quick stats</h2>
-        <div class="mini-grid">
-          <div class="mini">
-            <div class="val mono" id="qs-total">0h</div>
-            <div class="lbl">Total all-time</div>
-          </div>
-          <div class="mini">
-            <div class="val mono" id="qs-channels">0</div>
-            <div class="lbl">Channels watched</div>
-          </div>
-          <div class="mini">
-            <div class="val mono" id="qs-longest">0h</div>
-            <div class="lbl">Longest day</div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h2>Recently watched</h2>
-        <div id="recent-list"></div>
-      </div>
+    <div class="card" style="margin-top:16px">
+      <h2>All channels</h2>
+      <div id="merged-channels" class="ranked"></div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
