@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Twitch Watch Time Logger",
-  "version": "0.2.0",
-  "description": "Logs Twitch watch time to your own backend.",
+  "name": "Watchtime Logger",
+  "version": "0.3.0",
+  "description": "Logs Twitch and YouTube watch time to your own backend.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://www.twitch.tv/*",
-    "https://*.twitch.tv/*",
-    "https://player.twitch.tv/*"
+    "https://player.twitch.tv/*",
+    "https://www.youtube.com/*",
+    "https://m.youtube.com/*",
+    "https://youtube.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -21,8 +23,16 @@
     {
       "matches": ["https://player.twitch.tv/*"],
       "js": ["player.js"],
-      "run_at": "document_idle",
-      "all_frames": true
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*",
+        "https://youtube.com/*"
+      ],
+      "js": ["youtube-content.js"],
+      "run_at": "document_idle"
     }
   ],
   "options_ui": {
@@ -30,10 +40,6 @@
     "open_in_tab": true
   },
   "action": {
-    "default_icon": { "128": "icon-128.png" },
-    "default_title": "Twitch Watch Time"
-  },
-  "icons": {
-    "128": "icon-128.png"
+    "default_title": "Watchtime Logger"
   }
 }

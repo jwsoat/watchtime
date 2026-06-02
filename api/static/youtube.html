@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>YouTube Watchtime</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="gate" class="gate hidden">
+    <div class="card">
+      <h2>YouTube Watchtime</h2>
+      <p style="color:var(--muted); margin-top:8px; font-size:13px;">
+        Paste your API key to unlock the dashboard.
+      </p>
+      <input id="gate-input" type="password" placeholder="API key" autocomplete="off">
+      <button id="gate-submit">Unlock</button>
+      <div id="gate-err" class="err"></div>
+    </div>
+  </div>
+
+  <div id="app" class="page hidden">
+    <div class="topbar">
+      <h1>YouTube Watchtime</h1>
+      <nav class="topnav">
+        <a href="/">Merged</a>
+        <a href="/twitch">Twitch</a>
+        <a href="/youtube" class="active">YouTube</a>
+        <a href="/settings">Settings</a>
+      </nav>
+      <select id="account-picker" class="account-picker"></select>
+    </div>
+
+    <div class="card hero">
+      <div>
+        <div class="today-label">Today</div>
+        <div class="today-value mono" id="today-value">0h 0m</div>
+      </div>
+      <div class="top">
+        <div class="today-label">Top today</div>
+        <div class="top-channel" id="top-channel">—</div>
+        <div class="top-seconds mono" id="top-seconds">0 seconds</div>
+      </div>
+    </div>
+
+    <div class="pills">
+      <button class="pill active" data-window="today">Today</button>
+      <button class="pill" data-window="week">Last 7 days</button>
+      <button class="pill" data-window="month">Last 30 days</button>
+      <button class="pill" data-window="all">All-time</button>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Top channels</h2>
+        <div id="top-channels" class="ranked"></div>
+      </div>
+      <div class="card">
+        <h2>Top playlists</h2>
+        <div id="top-playlists" class="ranked"></div>
+      </div>
+      <div class="card">
+        <h2>Quick stats</h2>
+        <div class="mini-grid">
+          <div class="mini">
+            <div class="val mono" id="qs-total">0h</div>
+            <div class="lbl">Total all-time</div>
+          </div>
+          <div class="mini">
+            <div class="val mono" id="qs-channels">0</div>
+            <div class="lbl">Channels watched</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/youtube.js"></script>
+</body>
+</html>

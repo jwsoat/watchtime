@@ -36,18 +36,17 @@ async function enqueue(hb) {
   await chrome.storage.local.set({ [QUEUE_KEY]: queue });
 }
 
-async function flush() {
+async function flushQueue(queueKey, endpoint) {
   const { apiUrl, apiKey } = await getSettings();
   if (!apiUrl || !apiKey) return;
 
-  const { [QUEUE_KEY]: queue = [] } = await chrome.storage.local.get(QUEUE_KEY);
+  const { [queueKey]: queue = [] } = await chrome.storage.local.get(queueKey);
   if (queue.length === 0) return;
 
-  // Take a snapshot — anything added during the request stays queued
   const batch = queue.slice(0, 500);
 
   try {
-    const res = await fetch(`${apiUrl.replace(/\/$/, "")}/heartbeats`, {
+    const res = await fetch(`${apiUrl.replace(/\/$/, "")}${endpoint}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -56,18 +55,36 @@ async function flush() {
       body: JSON.stringify({ heartbeats: batch }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    // Success — remove the flushed entries
-    const { [QUEUE_KEY]: latest = [] } = await chrome.storage.local.get(QUEUE_KEY);
-    await chrome.storage.local.set({ [QUEUE_KEY]: latest.slice(batch.length) });
+    const { [queueKey]: latest = [] } = await chrome.storage.local.get(queueKey);
+    await chrome.storage.local.set({ [queueKey]: latest.slice(batch.length) });
   } catch (err) {
-    console.warn("[twitch-watchtime] flush failed, will retry:", err.message);
+    console.warn(`[watchtime] flush failed for ${endpoint}:`, err.message);
   }
+}
+
+async function flush() {
+  await flushQueue(QUEUE_KEY, "/heartbeats");
+  await flushQueue("yt_queue", "/youtube/heartbeats");
+}
+
+async function enqueueYoutube(hb) {
+  const clientId = await ensureClientId();
+  hb.client_id = clientId;
+  const { yt_queue: queue = [] } = await chrome.storage.local.get("yt_queue");
+  queue.push(hb);
+  if (queue.length > MAX_QUEUE) queue.splice(0, queue.length - MAX_QUEUE);
+  await chrome.storage.local.set({ yt_queue: queue });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "heartbeat") {
-    enqueue(msg.payload).then(() => sendResponse({ ok: true }));
-    return true; // keep channel open for async response
+    const { platform, ...hb } = msg.payload;
+    if (platform === "youtube") {
+      enqueueYoutube(hb).then(() => sendResponse({ ok: true }));
+    } else {
+      enqueue(hb).then(() => sendResponse({ ok: true }));
+    }
+    return true;
   }
 });
 

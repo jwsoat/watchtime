@@ -29,7 +29,7 @@ app = FastAPI(title="Twitch Watch Time API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -46,6 +46,21 @@ def root():
 @app.get("/tv", include_in_schema=False)
 def tv():
     return FileResponse(STATIC_DIR / "tv.html")
+
+
+@app.get("/twitch", include_in_schema=False)
+def twitch_page():
+    return FileResponse(STATIC_DIR / "twitch.html")
+
+
+@app.get("/youtube", include_in_schema=False)
+def youtube_page():
+    return FileResponse(STATIC_DIR / "youtube.html")
+
+
+@app.get("/settings", include_in_schema=False)
+def settings_page():
+    return FileResponse(STATIC_DIR / "settings.html")
 
 
 # ---------- DB ----------
@@ -74,6 +89,28 @@ def init_db():
                 ON heartbeats(ts);
             CREATE INDEX IF NOT EXISTS idx_heartbeats_channel_ts
                 ON heartbeats(channel, ts);
+            CREATE TABLE IF NOT EXISTS youtube_heartbeats (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts           INTEGER NOT NULL,
+                channel      TEXT    NOT NULL,
+                title        TEXT,
+                video_id     TEXT,
+                playlist_id  TEXT,
+                state        TEXT    NOT NULL CHECK(state IN ('active','passive')),
+                tab_visible  INTEGER NOT NULL CHECK(tab_visible IN (0,1)),
+                youtube_user TEXT,
+                client_id    TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_yt_ts
+                ON youtube_heartbeats(ts);
+            CREATE INDEX IF NOT EXISTS idx_yt_channel_ts
+                ON youtube_heartbeats(channel, ts);
+            CREATE TABLE IF NOT EXISTS channel_links (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                twitch_channel  TEXT NOT NULL,
+                youtube_channel TEXT NOT NULL,
+                UNIQUE(twitch_channel, youtube_channel)
+            );
         """)
         migrate_db(conn)
         conn.commit()
@@ -117,6 +154,27 @@ class HeartbeatBatch(BaseModel):
     heartbeats: list[Heartbeat]
 
 
+class YoutubeHeartbeat(BaseModel):
+    ts: int = Field(..., description="Unix seconds, UTC")
+    channel: str = Field(..., min_length=1, max_length=128)
+    title: Optional[str] = Field(default=None, max_length=512)
+    video_id: Optional[str] = Field(default=None, max_length=16)
+    playlist_id: Optional[str] = Field(default=None, max_length=64)
+    state: str = Field(..., pattern="^(active|passive)$")
+    tab_visible: bool
+    client_id: str = Field(..., min_length=1, max_length=64)
+    youtube_user: Optional[str] = Field(default=None, max_length=128)
+
+
+class YoutubeHeartbeatBatch(BaseModel):
+    heartbeats: list[YoutubeHeartbeat]
+
+
+class ChannelLink(BaseModel):
+    twitch_channel: str = Field(..., min_length=1, max_length=64)
+    youtube_channel: str = Field(..., min_length=1, max_length=128)
+
+
 # ---------- Endpoints ----------
 
 @app.get("/health")
@@ -154,8 +212,132 @@ def heartbeats_batch(batch: HeartbeatBatch):
     return {"ok": True, "stored": len(rows)}
 
 
+@app.post("/youtube/heartbeats", dependencies=[Depends(require_api_key)])
+def youtube_heartbeats_batch(batch: YoutubeHeartbeatBatch):
+    rows = [
+        (hb.ts, hb.channel.lower(), hb.title, hb.video_id, hb.playlist_id,
+         hb.state, int(hb.tab_visible), hb.youtube_user, hb.client_id)
+        for hb in batch.heartbeats
+    ]
+    with db() as conn:
+        conn.executemany(
+            "INSERT INTO youtube_heartbeats "
+            "(ts, channel, title, video_id, playlist_id, state, tab_visible, youtube_user, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    return {"ok": True, "stored": len(rows)}
+
+
+@app.get("/stats/youtube/users", dependencies=[Depends(require_api_key)])
+def yt_stats_users():
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT youtube_user AS user, MAX(ts) AS last_ts, COUNT(*) AS count
+            FROM youtube_heartbeats
+            WHERE youtube_user IS NOT NULL
+            GROUP BY youtube_user
+            ORDER BY last_ts DESC
+        """).fetchall()
+    return {
+        "users": [
+            {"user": r["user"], "last_ts": r["last_ts"], "count": r["count"]}
+            for r in rows
+        ]
+    }
+
+
+@app.get("/stats/youtube/today", dependencies=[Depends(require_api_key)])
+def yt_stats_today(include_passive: bool = True, user: Optional[str] = None):
+    return _yt_stats_since(_local_midnight(), include_passive, user)
+
+
+@app.get("/stats/youtube/week", dependencies=[Depends(require_api_key)])
+def yt_stats_week(include_passive: bool = True, user: Optional[str] = None):
+    return _yt_stats_since(int(time.time()) - 7 * 86400, include_passive, user)
+
+
+@app.get("/stats/youtube/month", dependencies=[Depends(require_api_key)])
+def yt_stats_month(include_passive: bool = True, user: Optional[str] = None):
+    return _yt_stats_since(int(time.time()) - 30 * 86400, include_passive, user)
+
+
+@app.get("/stats/youtube/all", dependencies=[Depends(require_api_key)])
+def yt_stats_all(include_passive: bool = True, user: Optional[str] = None):
+    return _yt_stats_since(0, include_passive, user)
+
+
+@app.get("/stats/youtube/playlists", dependencies=[Depends(require_api_key)])
+def yt_stats_playlists(
+    window: str = "today",
+    include_passive: bool = True,
+    user: Optional[str] = None,
+):
+    since = _window_since(window)
+    state_filter = "" if include_passive else "AND state = 'active'"
+    user_sql, user_params = _yt_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT playlist_id, COUNT(*) AS n
+            FROM youtube_heartbeats
+            WHERE ts >= ? AND playlist_id IS NOT NULL {state_filter} {user_sql}
+            GROUP BY playlist_id
+            ORDER BY n DESC
+        """, (since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "playlists": [
+            {"playlist_id": r["playlist_id"], "seconds": _seconds_from_count(r["n"])}
+            for r in rows
+        ],
+    }
+
+
 def _seconds_from_count(n: int) -> int:
     return n * HEARTBEAT_INTERVAL
+
+
+@app.get("/settings/channel-links", dependencies=[Depends(require_api_key)])
+def get_channel_links():
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id, twitch_channel, youtube_channel FROM channel_links ORDER BY id"
+        ).fetchall()
+    return {
+        "links": [
+            {"id": r["id"], "twitch_channel": r["twitch_channel"], "youtube_channel": r["youtube_channel"]}
+            for r in rows
+        ]
+    }
+
+
+@app.post("/settings/channel-links", dependencies=[Depends(require_api_key)])
+def add_channel_link(link: ChannelLink):
+    tc = link.twitch_channel.lower()
+    yc = link.youtube_channel.lower()
+    with db() as conn:
+        try:
+            cursor = conn.execute(
+                "INSERT INTO channel_links (twitch_channel, youtube_channel) VALUES (?, ?)",
+                (tc, yc),
+            )
+            link_id = cursor.lastrowid
+        except sqlite3.IntegrityError:
+            row = conn.execute(
+                "SELECT id FROM channel_links WHERE twitch_channel = ? AND youtube_channel = ?",
+                (tc, yc),
+            ).fetchone()
+            link_id = row["id"]
+    return {"ok": True, "id": link_id}
+
+
+@app.delete("/settings/channel-links/{link_id}", dependencies=[Depends(require_api_key)])
+def delete_channel_link(link_id: int):
+    with db() as conn:
+        cur = conn.execute("DELETE FROM channel_links WHERE id = ?", (link_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="link not found")
+    return {"ok": True}
 
 
 @app.get("/stats/today", dependencies=[Depends(require_api_key)])
@@ -399,3 +581,31 @@ def _local_midnight() -> int:
         0, 0, 0, now.tm_wday, now.tm_yday, now.tm_isdst,
     ))
     return int(time.mktime(midnight_struct))
+
+
+def _yt_user_clause(user: Optional[str]):
+    if user is None:
+        return "", ()
+    if user == "anonymous":
+        return "AND youtube_user IS NULL", ()
+    return "AND youtube_user = ?", (user,)
+
+
+def _yt_stats_since(since: int, include_passive: bool, user: Optional[str] = None):
+    state_filter = "" if include_passive else "AND state = 'active'"
+    user_sql, user_params = _yt_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT channel, COUNT(*) AS n
+            FROM youtube_heartbeats
+            WHERE ts >= ? {state_filter} {user_sql}
+            GROUP BY channel
+            ORDER BY n DESC
+        """, (since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "channels": [
+            {"channel": r["channel"], "seconds": _seconds_from_count(r["n"])}
+            for r in rows
+        ],
+    }

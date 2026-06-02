@@ -45,6 +45,32 @@ def _clean_heartbeats(app):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _clean_youtube_data(app):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute("DELETE FROM youtube_heartbeats")
+        conn.execute("DELETE FROM channel_links")
+        conn.commit()
+    finally:
+        conn.close()
+    yield
+
+
+def insert_youtube_heartbeat(
+    db_conn, ts, channel, youtube_user=None, title=None,
+    video_id=None, playlist_id=None, state="active", tab_visible=1,
+    client_id="test-client",
+):
+    """Insert a youtube_heartbeat row directly. Caller must commit."""
+    db_conn.execute(
+        "INSERT INTO youtube_heartbeats "
+        "(ts, channel, title, video_id, playlist_id, state, tab_visible, youtube_user, client_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (ts, channel.lower(), title, video_id, playlist_id, state, tab_visible, youtube_user, client_id),
+    )
+
+
 @pytest.fixture
 def db():
     conn = sqlite3.connect(DB_PATH)
