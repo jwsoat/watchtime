@@ -281,8 +281,54 @@ $("import-form").addEventListener("submit", async (e) => {
   }
 });
 
+async function loadGdriveStatus() {
+  try {
+    const data = await apiReq("GET", "/settings/gdrive/status");
+    $("gdrive-not-configured").classList.toggle("hidden", data.configured);
+    $("gdrive-disconnected").classList.toggle("hidden", !data.configured || data.connected);
+    $("gdrive-connected").classList.toggle("hidden", !data.connected);
+    if (data.connected) {
+      const tbody = $("gdrive-backups-tbody");
+      if (!data.backups.length) {
+        tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">No backups yet.</td></tr>';
+      } else {
+        tbody.innerHTML = data.backups.map(b => {
+          const date = b.createdTime ? new Date(b.createdTime).toLocaleString() : "—";
+          const size = b.size ? `${(parseInt(b.size) / 1024 / 1024).toFixed(2)} MB` : "—";
+          return `<tr><td>${escapeHtml(b.name)}</td><td>${date}</td><td>${size}</td></tr>`;
+        }).join("");
+      }
+    }
+  } catch (err) {
+    console.warn("gdrive status failed", err);
+  }
+}
+
+$("gdrive-connect-btn").addEventListener("click", () => {
+  window.open(`/settings/gdrive/connect?x-api-key=${encodeURIComponent(state.apiKey)}`, "_blank");
+});
+
+$("gdrive-backup-btn").addEventListener("click", async () => {
+  const status = $("gdrive-backup-status");
+  status.textContent = "Uploading backup...";
+  try {
+    const res = await apiReq("POST", "/settings/gdrive/backup");
+    const rotated = res.rotated_out.length ? ` Rotated out: ${res.rotated_out.join(", ")}` : "";
+    status.textContent = `Backed up ${res.uploaded.name}.${rotated}`;
+    loadGdriveStatus();
+  } catch (err) {
+    status.textContent = `Backup failed: ${err.message}`;
+  }
+});
+
+$("gdrive-disconnect-btn").addEventListener("click", async () => {
+  if (!confirm("Disconnect Google Drive? Existing backups on Drive are kept.")) return;
+  await apiReq("DELETE", "/settings/gdrive/disconnect");
+  loadGdriveStatus();
+});
+
 async function boot() {
-  await Promise.all([loadLinks(), loadAccounts(), loadCustomAvatars(), loadChannelSuggestions()]);
+  await Promise.all([loadLinks(), loadAccounts(), loadCustomAvatars(), loadChannelSuggestions(), loadGdriveStatus()]);
 }
 
 if (state.apiKey) {

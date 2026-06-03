@@ -120,6 +120,32 @@
       </div>
     </div>
 
+    <div class="card" style="max-width:640px; margin-bottom:16px">
+      <h2>Google Drive backup</h2>
+      <div id="gdrive-section">
+        <p id="gdrive-not-configured" class="hidden" style="color:var(--muted); font-size:13px">
+          Not configured. Set <code>GDRIVE_CLIENT_ID</code> and <code>GDRIVE_CLIENT_SECRET</code> env vars to enable.
+        </p>
+        <div id="gdrive-disconnected" class="hidden">
+          <p style="color:var(--muted); font-size:13px; margin-bottom:12px">
+            Connect your Google Drive to auto-rotate backups (keeps 3 most recent).
+          </p>
+          <button id="gdrive-connect-btn" type="button">Connect Google Drive</button>
+        </div>
+        <div id="gdrive-connected" class="hidden">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px">
+            <button id="gdrive-backup-btn" type="button">Backup now</button>
+            <button id="gdrive-disconnect-btn" type="button" class="del-btn">Disconnect</button>
+          </div>
+          <div id="gdrive-backup-status" style="font-size:12px;color:var(--muted);margin-bottom:12px"></div>
+          <table>
+            <thead><tr><th>Backup file</th><th>Date</th><th>Size</th></tr></thead>
+            <tbody id="gdrive-backups-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="card" style="max-width:640px">
       <h2>Channel links</h2>
       <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">

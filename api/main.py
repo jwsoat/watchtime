@@ -18,9 +18,9 @@ import urllib.request
 from contextlib import contextmanager
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, Header, HTTPException, Depends, Query, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -1126,3 +1126,63 @@ async def import_data(file: UploadFile = File(...), mode: str = "merge"):
             counts[table] = inserted
 
     return {"status": "ok", "mode": mode, "imported": counts}
+
+
+# ---------- Google Drive backup ----------
+
+import gdrive
+
+
+def _redirect_uri(request: Request):
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", "localhost"))
+    return f"{scheme}://{host}/settings/gdrive/callback"
+
+
+@app.get("/settings/gdrive/status", dependencies=[Depends(require_api_key)])
+def gdrive_status():
+    if not gdrive.is_configured():
+        return {"configured": False, "connected": False, "backups": []}
+    connected = gdrive.is_connected()
+    backups = gdrive.list_backups() if connected else []
+    return {"configured": True, "connected": connected, "backups": backups}
+
+
+@app.get("/settings/gdrive/connect")
+def gdrive_connect(request: Request, x_api_key: Optional[str] = Query(default=None, alias="x-api-key")):
+    if x_api_key != API_KEY:
+        raise HTTPException(401, "bad api key")
+    if not gdrive.is_configured():
+        raise HTTPException(400, "GDRIVE_CLIENT_ID and GDRIVE_CLIENT_SECRET env vars not set")
+    url = gdrive.get_auth_url(_redirect_uri(request))
+    return RedirectResponse(url)
+
+
+@app.get("/settings/gdrive/callback")
+def gdrive_callback(request: Request, code: str = Query(...)):
+    gdrive.exchange_code(code, _redirect_uri(request))
+    return RedirectResponse("/settings")
+
+
+@app.post("/settings/gdrive/backup", dependencies=[Depends(require_api_key)])
+def gdrive_backup_now():
+    if not gdrive.is_connected():
+        raise HTTPException(400, "Google Drive not connected")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+    tmp.close()
+    try:
+        with sqlite3.connect(DB_PATH) as src:
+            with sqlite3.connect(tmp.name) as dst:
+                src.backup(dst)
+        ts = time.strftime("%Y-%m-%d_%H%M%S")
+        uploaded = gdrive.upload_file(tmp.name, f"watchtime-{ts}.db")
+    finally:
+        os.unlink(tmp.name)
+    deleted = gdrive.rotate_backups()
+    return {"status": "ok", "uploaded": uploaded, "rotated_out": deleted}
+
+
+@app.delete("/settings/gdrive/disconnect", dependencies=[Depends(require_api_key)])
+def gdrive_disconnect():
+    gdrive.disconnect()
+    return {"status": "ok"}
