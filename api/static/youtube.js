@@ -4,6 +4,7 @@ const POLL_MS = 10_000;
 const STORAGE_KEY = "watchtime_api_key";
 const YT_ACCOUNT_KEY = "watchtime_yt_account";
 const WINDOW_PARAMS = { today: "today", last7days: "week", last30days: "month", alltime: "all" };
+const WINDOW_LABELS = { today: "Today", week: "Last 7 Days", month: "Last 30 Days", all: "All-Time" };
 const WINDOW_TO_PARAM = Object.fromEntries(
   Object.entries(WINDOW_PARAMS).map(([k, v]) => [v, k])
 );
@@ -155,6 +156,12 @@ async function updateHero() {
   }
 }
 
+function updateWindowLabels() {
+  const label = WINDOW_LABELS[state.window] || "Today";
+  $("top-channels-label").textContent = `Top channels — ${label}`;
+  $("top-videos-label").textContent = `Top videos — ${label}`;
+}
+
 async function updateTopChannels() {
   const data = await api(withUser(`/stats/youtube/${state.window}`));
   const channels = data.channels.slice(0, 10);
@@ -245,6 +252,7 @@ document.querySelectorAll(".pill").forEach((pill) => {
     pill.classList.add("active");
     state.window = pill.dataset.window;
     setWindowUrl(state.window);
+    updateWindowLabels();
     updateTopChannels();
     updateTopVideos();
   });
@@ -267,6 +275,7 @@ async function refresh() {
 async function boot() {
   await loadAccountPicker();
   applyWindowFromUrl();
+  updateWindowLabels();
   await refresh();
   if (state.pollTimer) clearInterval(state.pollTimer);
   state.pollTimer = setInterval(refresh, POLL_MS);

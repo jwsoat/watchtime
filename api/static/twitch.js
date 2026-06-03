@@ -109,6 +109,7 @@ const WINDOW_PARAMS = {
   last30days: "month",
   alltime: "all",
 };
+const WINDOW_LABELS = { today: "Today", week: "Last 7 Days", month: "Last 30 Days", all: "All-Time" };
 
 // window value -> query key
 const WINDOW_TO_PARAM = Object.fromEntries(
@@ -137,6 +138,7 @@ function setWindowUrl(win) {
 async function boot() {
   await loadAccountPicker();
   applyWindowFromUrl();
+  updateWindowLabels();
   await refresh();
   if (state.pollTimer) clearInterval(state.pollTimer);
   state.pollTimer = setInterval(refresh, POLL_MS);
@@ -195,10 +197,17 @@ document.querySelectorAll(".pill").forEach((pill) => {
     pill.classList.add("active");
     state.window = pill.dataset.window;
     setWindowUrl(state.window);
+    updateWindowLabels();
     updateTopChannels();
     updateTopCategories();
   });
 });
+
+function updateWindowLabels() {
+  const label = WINDOW_LABELS[state.window] || "Today";
+  $("top-channels-label").textContent = `Top channels — ${label}`;
+  $("top-categories-label").textContent = `Top categories — ${label}`;
+}
 
 // ---------- Top channels ----------
 const AVATAR_COLORS = ["#9146FF", "#00f5d4", "#ff6b6b", "#feca57", "#5f27cd", "#48dbfb", "#1dd1a1", "#f368e0"];
