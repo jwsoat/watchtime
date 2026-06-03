@@ -1,7 +1,7 @@
 // Runs on youtube.com pages.
 // Detects channel, video state, playlist, and logged-in user.
 
-const HEARTBEAT_MS = 60 * 1000;
+const HEARTBEAT_MS = 10 * 1000;
 const IDLE_THRESHOLD_MS = 5 * 60 * 1000;
 
 let lastActivity = Date.now();
