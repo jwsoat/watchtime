@@ -44,30 +44,47 @@ app.add_middleware(
 STATIC_DIR = pathlib.Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+import hashlib
+
+def _build_hash():
+    h = hashlib.md5()
+    for f in sorted(STATIC_DIR.glob("*.js")) + sorted(STATIC_DIR.glob("*.css")):
+        h.update(f.read_bytes())
+    return h.hexdigest()[:8]
+
+ASSET_VERSION = _build_hash()
+
+
+def _serve_html(path):
+    text = path.read_text()
+    text = text.replace(".js\"", f".js?v={ASSET_VERSION}\"")
+    text = text.replace(".css\"", f".css?v={ASSET_VERSION}\"")
+    return Response(content=text, media_type="text/html")
+
 
 @app.get("/", include_in_schema=False)
 def root():
-    return FileResponse(STATIC_DIR / "index.html")
+    return _serve_html(STATIC_DIR / "index.html")
 
 
 @app.get("/tv", include_in_schema=False)
 def tv():
-    return FileResponse(STATIC_DIR / "tv.html")
+    return _serve_html(STATIC_DIR / "tv.html")
 
 
 @app.get("/twitch", include_in_schema=False)
 def twitch_page():
-    return FileResponse(STATIC_DIR / "twitch.html")
+    return _serve_html(STATIC_DIR / "twitch.html")
 
 
 @app.get("/youtube", include_in_schema=False)
 def youtube_page():
-    return FileResponse(STATIC_DIR / "youtube.html")
+    return _serve_html(STATIC_DIR / "youtube.html")
 
 
 @app.get("/settings", include_in_schema=False)
 def settings_page():
-    return FileResponse(STATIC_DIR / "settings.html")
+    return _serve_html(STATIC_DIR / "settings.html")
 
 
 # ---------- DB ----------
