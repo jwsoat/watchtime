@@ -339,7 +339,7 @@ async function updateMerged() {
       <div class="value mono">${fmtDuration(row.seconds)}</div>
       <div class="bar"><span style="width:${(row.seconds / max * 100).toFixed(1)}%"></span></div>
     `;
-    (rank % 2 === 1 ? leftRoot : rightRoot).appendChild(el);
+    (rank <= 20 ? leftRoot : rightRoot).appendChild(el);
   });
 
   if (!rows.length) {
