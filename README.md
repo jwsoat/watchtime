@@ -1,107 +1,194 @@
-# Twitch Watch Time Tracker
+# Watchtime Tracker
 
-Personal watch time logger for Twitch. A browser extension sends heartbeats to
-your own self-hosted API, which stores them in SQLite. Phase 1: ingestion only.
-Phase 2 will add a custom dashboard, Phase 3 a Home Assistant integration.
+Personal watch time logger for **Twitch** and **YouTube**. A browser extension
+sends heartbeats to a self-hosted API, which stores them in SQLite and serves a
+multi-platform dashboard.
+
+Live at **stats.jwsoat.co.nz**.
 
 ## How it works
 
-The extension runs a 60-second timer on twitch.tv pages. Every tick, if a video
-is playing, it records:
+The extension runs a heartbeat timer on twitch.tv and youtube.com pages. Every
+tick (10s Twitch, 60s YouTube), if a video is playing, it records:
 
-- channel (from URL)
-- timestamp
-- category and stream title (from DOM)
-- whether the tab is visible
-- whether the user is active (mouse/keyboard in last 5 min) vs idle
+- channel name
+- timestamp (Unix seconds UTC)
+- category / stream title
+- video ID and playlist ID (YouTube)
+- tab visibility
+- user activity state (active, passive, audio-only)
 
-Heartbeats are buffered in `chrome.storage.local` and flushed to the API every
-minute. If the API is unreachable, they accumulate locally and flush on next
-success. Up to 5000 queued before the oldest start dropping.
+Heartbeats buffer in `chrome.storage.local` and flush to the API every minute.
+If the API is unreachable, they accumulate locally (up to 5000) and flush on
+next success.
 
-Watch time = `count(heartbeats) * 60 seconds`. No session-stitching needed.
+Watch time = `count(heartbeats) * interval`. No session-stitching needed.
+
+## Dashboard
+
+Four views behind an API key gate:
+
+| Path | Description |
+|------|-------------|
+| `/` | **Merged** — combined Twitch + YouTube rankings, daily chart, quick stats |
+| `/twitch` | Twitch-only — channels, categories, daily chart |
+| `/youtube` | YouTube-only — channels, videos, daily chart |
+| `/tv` | Ambient scoreboard with rotating panels (point a spare display here) |
+| `/settings` | Accounts, channel links, avatars, data management, Google Drive backup |
+
+**Merged view** ranks all channels across both platforms in two columns (odd
+ranks left, even right, up to 40 total). Platform badges (TW/YT) indicate source.
+
+**Account picker** lets you filter by linked Twitch + YouTube account pairs.
+Configure these in Settings.
 
 ## Setup
 
-### 1. Backend (on Proxmox)
+### 1. Backend
 
 ```bash
 cp .env.example .env
-# Generate a key:
 echo "API_KEY=$(openssl rand -hex 32)" > .env
 
-docker compose up -d
-docker compose logs -f watch-api
+docker compose up -d --build
 ```
 
 Test:
-
 ```bash
 curl http://localhost:8765/health
-# {"ok":true,"interval":60}
+# {"ok":true,"interval":10}
 ```
 
-You'll want to put this behind a reverse proxy (Caddy/Traefik/nginx) for HTTPS
-since the extension needs to talk to it from twitch.tv. Easiest with Caddy:
-
+Put behind a reverse proxy for HTTPS:
 ```caddyfile
-watch.jwsoat.co.nz {
+stats.jwsoat.co.nz {
     reverse_proxy localhost:8765
 }
 ```
 
 ### 2. Extension
 
-1. Open `chrome://extensions`
-2. Enable Developer Mode
-3. Click "Load unpacked" and pick the `extension/` directory
-4. Click "Details" → "Extension options"
-5. Paste your API URL and API key, click Save
+1. Open `chrome://extensions`, enable Developer Mode
+2. Click "Load unpacked", select the `extension/` directory
+3. Click Details > Extension options
+4. Set API URL and API key, click Save
 
-Open twitch.tv, watch any stream, and within a couple of minutes you should
-see heartbeats arriving. Check with:
-
+Open twitch.tv or youtube.com, watch something, verify:
 ```bash
-curl -H "X-API-Key: $API_KEY" http://localhost:8765/stats/today
+curl -H "X-API-Key: $API_KEY" https://stats.jwsoat.co.nz/stats/today
 ```
 
 ## API endpoints
 
-All `/stats/*` and `/heartbeat*` require `X-API-Key` header.
+All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
+
+### Ingestion
 
 | Method | Path | Notes |
-|---|---|---|
-| GET | `/health` | No auth, sanity check |
-| POST | `/heartbeat` | Single heartbeat (extension uses batch) |
-| POST | `/heartbeats` | Batched heartbeats |
-| GET | `/stats/today` | Per-channel seconds since local midnight |
-| GET | `/stats/week` | Per-channel seconds, last 7 days |
-| GET | `/stats/all` | Per-channel seconds, all time |
-| GET | `/stats/daily?days=30` | Total seconds per day |
-| GET | `/stats/top_channel?window=today` | Top channel name + seconds |
-| GET | `/stats/total?window=today` | Total seconds across all channels |
+|--------|------|-------|
+| POST | `/heartbeat` | Single Twitch heartbeat |
+| POST | `/heartbeats` | Batched Twitch heartbeats |
+| POST | `/youtube/heartbeats` | Batched YouTube heartbeats |
 
-Add `?include_passive=false` to exclude idle/AFK time.
+### Twitch stats
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/stats/today` | Per-channel seconds since midnight |
+| GET | `/stats/week` | Last 7 days |
+| GET | `/stats/month` | Last 30 days |
+| GET | `/stats/all` | All time |
+| GET | `/stats/daily?days=30` | Total seconds per day |
+| GET | `/stats/now` | Currently watching |
+| GET | `/stats/top_channel?window=today` | Top channel + seconds |
+| GET | `/stats/total?window=today` | Total seconds |
+| GET | `/stats/channel?channel=xqc` | Single channel breakdown |
+| GET | `/stats/categories` | Category rankings |
+| GET | `/stats/recent` | Recently watched channels |
+| GET | `/stats/users` | Known Twitch users |
+| GET | `/stats/channels` | All tracked channels (both platforms) |
+
+### YouTube stats
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/stats/youtube/today` | Per-channel seconds since midnight |
+| GET | `/stats/youtube/week` | Last 7 days |
+| GET | `/stats/youtube/month` | Last 30 days |
+| GET | `/stats/youtube/all` | All time |
+| GET | `/stats/youtube/daily?days=30` | Seconds per day |
+| GET | `/stats/youtube/now` | Currently watching |
+| GET | `/stats/youtube/videos` | Video rankings |
+| GET | `/stats/youtube/playlists` | Playlist stats |
+| GET | `/stats/youtube/users` | Known YouTube users |
+
+Add `?include_passive=false` to exclude idle time. Add `?user=<handle>` to
+filter by account. Add `?platform=twitch|youtube` on shared endpoints.
+
+### Settings
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/settings/channel-links` | List Twitch-YouTube channel pairs |
+| POST | `/settings/channel-links` | Add link |
+| DELETE | `/settings/channel-links/{id}` | Remove link |
+| GET | `/settings/user-accounts` | List account pairs |
+| POST | `/settings/user-accounts` | Add account |
+| DELETE | `/settings/user-accounts/{id}` | Remove account |
+| POST | `/settings/user-accounts/auto-link` | Auto-detect pairs from extension |
+
+### Avatars
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/avatars/{platform}/{channel}` | Fetch avatar (custom > cache > unavatar.io) |
+| POST | `/avatars/{platform}/{channel}` | Upload custom avatar |
+| DELETE | `/avatars/{platform}/{channel}` | Delete custom avatar |
+| GET | `/avatars/custom` | List custom avatars |
+
+### Data management
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/settings/export` | Full JSON export of all tables |
+| GET | `/settings/backup` | Download raw SQLite file |
+| POST | `/settings/import?mode=merge` | Import JSON (merge or replace) |
+
+### Google Drive backup
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/settings/gdrive/status` | Connection status + backup list |
+| GET | `/settings/gdrive/connect` | Start OAuth flow |
+| POST | `/settings/gdrive/backup` | Upload backup + rotate (keeps 3) |
+| DELETE | `/settings/gdrive/disconnect` | Remove stored token |
+
+Requires `GDRIVE_CLIENT_ID` and `GDRIVE_CLIENT_SECRET` env vars. Add
+`https://stats.jwsoat.co.nz/settings/gdrive/callback` as an authorized
+redirect URI in Google Cloud Console.
 
 ## Backups
 
-The DB is just `api/data/watchtime.db`. Throw it in your regular backup.
-For extra paranoia, periodic dumps:
+Three options:
 
+1. **Local download** — Settings > Data Management > Download DB backup
+2. **JSON export** — Settings > Data Management > Export JSON (importable)
+3. **Google Drive** — Settings > Google Drive backup > connects via OAuth,
+   keeps 3 rotating backups in a "Watchtime Backups" folder
+
+The raw database is at `api/data/watchtime.db`. For cron-based backups:
 ```bash
 docker exec twitch-watch-api sh -c \
   "sqlite3 /data/watchtime.db .dump" > backup-$(date +%F).sql
 ```
 
-## Dashboard (Phase 2)
+## Environment variables
 
-Once heartbeats are flowing, the dashboard is available at:
-
-- `http://192.168.1.100:8765/` — main dashboard (paste your API key on first visit)
-- `http://192.168.1.100:8765/tv` — ambient scoreboard / rotating panels (point a spare display at this URL)
-
-The dashboard is per-Twitch-account. The account picker in the top-right defaults to whichever account has the most recent activity. To pre-select an account on the TV view: `?user=<login>`.
-
-## What's next
-
-- Phase 3: REST sensors in Home Assistant pointed at `/stats/*` (see `docs/superpowers/specs/2026-05-16-dashboard-design.md`).
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `API_KEY` | Yes | — | Auth key for all protected endpoints |
+| `DB_PATH` | No | `/data/watchtime.db` | SQLite database path |
+| `HEARTBEAT_INTERVAL_SECONDS` | No | `10` | Heartbeat-to-seconds multiplier |
+| `GDRIVE_CLIENT_ID` | No | — | Google OAuth client ID (for Drive backup) |
+| `GDRIVE_CLIENT_SECRET` | No | — | Google OAuth client secret |
+| `TZ` | No | `UTC` | Timezone for "today" calculations |
