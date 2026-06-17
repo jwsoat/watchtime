@@ -182,10 +182,9 @@ function avatarColor(name) {
 }
 
 async function updateHero() {
-  const [today, twNow, ytNow] = await Promise.all([
+  const [today, now] = await Promise.all([
     api(withMergedUser("/stats/merged/channels?window=today")),
-    api(withTwUser("/stats/now")),
-    api(withYtUser("/stats/youtube/now")),
+    api(withMergedUser("/stats/now?platform=merged")),
   ]);
 
   $("today-value").textContent = fmtDuration(today.total_seconds);
@@ -194,12 +193,11 @@ async function updateHero() {
   $("top-channel").textContent = top ? top.label : "—";
   $("top-seconds").textContent = top ? fmtDuration(top.seconds) : "0 seconds";
 
-  const now = twNow.channel ? twNow : (ytNow.channel ? ytNow : null);
-  if (now) {
+  if (now && now.channel) {
     $("live-indicator").classList.remove("hidden");
-    const who = now.twitch_user || now.youtube_user;
+    const who = now.twitch_user;
     $("live-label").textContent = who ? `${who}'s now watching` : "Now watching";
-    $("live-channel").textContent = now.channel;
+    $("live-channel").textContent = now.display_name || now.channel;
     $("live-title").textContent = now.title || "";
     $("live-category").textContent = now.category || "";
   } else {

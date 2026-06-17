@@ -1351,40 +1351,60 @@ def stats_now(user: Optional[str] = None, platform: str = "twitch"):
                 "twitch_user": row["youtube_user"],
             }
         if platform == "merged":
-            tw_user, yt_user = _resolve_merged_user(conn, user)
-            tw_sql, tw_params = _user_clause(tw_user)
-            yt_sql, yt_params = _yt_user_clause(yt_user)
+            users = _resolve_user_handles(conn, user)
+            tw_sql, tw_params = _user_clause(users["twitch"])
+            yt_sql, yt_params = _yt_user_clause(users["youtube"])
+            candidates = []
             tw_row = conn.execute(f"""
                 SELECT ts, channel, category, title, twitch_user
                 FROM heartbeats WHERE ts >= ? {tw_sql}
                 ORDER BY ts DESC LIMIT 1
             """, (cutoff, *tw_params)).fetchone()
+            if tw_row:
+                candidates.append({
+                    "ts": tw_row["ts"],
+                    "platform": "twitch",
+                    "channel": tw_row["channel"],
+                    "category": tw_row["category"],
+                    "title": tw_row["title"],
+                    "twitch_user": tw_row["twitch_user"],
+                })
             yt_row = conn.execute(f"""
                 SELECT ts, channel, title, youtube_user
                 FROM youtube_heartbeats
                 WHERE ts >= ? AND state = 'active' {yt_sql}
                 ORDER BY ts DESC LIMIT 1
             """, (cutoff, *yt_params)).fetchone()
-            # Pick most recent across both platforms
-            tw_ts = tw_row["ts"] if tw_row else 0
-            yt_ts = yt_row["ts"] if yt_row else 0
-            if tw_ts == 0 and yt_ts == 0:
+            if yt_row:
+                candidates.append({
+                    "ts": yt_row["ts"],
+                    "platform": "youtube",
+                    "channel": yt_row["channel"],
+                    "category": None,
+                    "title": yt_row["title"],
+                    "twitch_user": yt_row["youtube_user"],
+                })
+            for p in sorted(MEDIA_PLATFORMS):
+                m_sql, m_params = _media_user_clause(users.get(p))
+                m_row = conn.execute(f"""
+                    SELECT ts, channel, title, media_user, display_name
+                    FROM media_heartbeats
+                    WHERE platform = ? AND ts >= ? AND state = 'active' {m_sql}
+                    ORDER BY ts DESC LIMIT 1
+                """, (p, cutoff, *m_params)).fetchone()
+                if m_row:
+                    candidates.append({
+                        "ts": m_row["ts"],
+                        "platform": p,
+                        "channel": m_row["channel"],
+                        "category": None,
+                        "title": m_row["title"],
+                        "twitch_user": m_row["media_user"],
+                        "display_name": m_row["display_name"],
+                    })
+            if not candidates:
                 return {"now": None}
-            if tw_ts >= yt_ts:
-                return {
-                    "ts": tw_row["ts"],
-                    "channel": tw_row["channel"],
-                    "category": tw_row["category"],
-                    "title": tw_row["title"],
-                    "twitch_user": tw_row["twitch_user"],
-                }
-            return {
-                "ts": yt_row["ts"],
-                "channel": yt_row["channel"],
-                "category": None,
-                "title": yt_row["title"],
-                "twitch_user": yt_row["youtube_user"],
-            }
+            return max(candidates, key=lambda c: c["ts"])
         # Default: twitch
         user_sql, user_params = _user_clause(user)
         row = conn.execute(f"""
