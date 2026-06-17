@@ -60,3 +60,49 @@ Avatars extended to use unavatar.io's twitter/facebook/instagram providers
 per-platform isolation, user/passive filters, time windows, users/videos/now
 endpoints, and the Plex session-parsing logic. Static routes covered in
 `tests/test_static_routes.py`.
+
+## Follow-up: cross-platform creator matching
+
+Goal: when the same creator/author is watched on multiple platforms (e.g. a
+YouTube channel and the same content in Plex), roll their watch time up into one
+entry on the merged dashboard. The legacy `channel_links` table only paired one
+Twitch channel with one YouTube channel and was applied client-side.
+
+### Model
+
+Generalized to any number of platforms via two tables:
+
+- `creator_groups (id, label)` — one row per creator.
+- `creator_aliases (id, group_id, platform, channel)` with `UNIQUE(platform,
+  channel)` — a channel belongs to exactly one creator.
+
+Legacy `channel_links` rows are folded into this model by an idempotent startup
+migration (`_migrate_channel_links_to_creators`); the legacy table + endpoints
+remain for backward compatibility.
+
+### Endpoints
+
+- `GET/POST /settings/creator-links`, `DELETE /settings/creator-links/alias/{id}`,
+  `DELETE /settings/creator-links/group/{id}` — manage creator groups.
+- `GET /stats/merged/channels?window=` — per-creator rollup across **all**
+  platforms, computed server-side: gathers per-(platform, channel) seconds,
+  groups linked channels by creator, returns combined rows sorted by time with
+  `members`, `platforms` and a `primary` (for the avatar).
+- `GET /stats/merged/daily?days=` — combined daily totals across all platforms.
+
+`?user=<label>` resolves a `user_accounts` label and filters Twitch + YouTube;
+media platforms have no viewer-account linking so are always included.
+
+### Frontend
+
+The merged dashboard (`app.js`) now drives the hero, ranked lists, quick stats
+and daily chart from the `/stats/merged/*` endpoints (previously it merged
+Twitch + YouTube client-side). Badges render for all six platforms. The Settings
+page replaces the "Channel links" card with a "Creator links" card for managing
+multi-platform creator groups; custom-avatar upload now offers all platforms.
+
+### Tests
+
+`tests/test_creator_links.py` covers the CRUD (incl. uniqueness/409, empty-group
+cleanup), the merged rollup (linked rollup, unlinked separation, sorting, window
+filtering), merged daily, and the idempotent legacy migration.

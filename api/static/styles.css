@@ -270,3 +270,7 @@ body.media-page .pill:hover { border-color: var(--media-accent, var(--purple)); 
 .platform-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; vertical-align: middle; }
 .platform-badge.twitch { background: rgba(145,70,255,0.15); color: #9146FF; }
 .platform-badge.youtube { background: rgba(255,0,80,0.15); color: #FF0050; }
+.platform-badge.x { background: rgba(29,155,240,0.15); color: #1d9bf0; }
+.platform-badge.facebook { background: rgba(24,119,242,0.15); color: #1877f2; }
+.platform-badge.instagram { background: rgba(225,48,108,0.15); color: #e1306c; }
+.platform-badge.plex { background: rgba(229,160,13,0.15); color: #e5a00d; }

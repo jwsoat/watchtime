@@ -42,7 +42,7 @@ $("gate-submit").addEventListener("click", async () => {
   if (!key) return;
   state.apiKey = key;
   try {
-    await apiReq("GET", "/settings/channel-links");
+    await apiReq("GET", "/settings/creator-links");
     localStorage.setItem(STORAGE_KEY, key);
     hideGate();
     boot();
@@ -53,24 +53,38 @@ $("gate-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("gate-submit").click();
 });
 
-async function loadLinks() {
-  const { links } = await apiReq("GET", "/settings/channel-links");
-  const tbody = $("links-tbody");
-  if (!links.length) {
-    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted); padding:12px 0">No links yet.</td></tr>';
+const PLATFORM_BADGE = {
+  twitch: "TW", youtube: "YT", x: "X",
+  facebook: "FB", instagram: "IG", plex: "PLEX",
+};
+
+async function loadCreators() {
+  const { groups } = await apiReq("GET", "/settings/creator-links");
+  const tbody = $("creator-tbody");
+  if (!groups.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted); padding:12px 0">No creator links yet.</td></tr>';
     return;
   }
-  tbody.innerHTML = links.map(l => `
+  tbody.innerHTML = groups.map(g => `
     <tr>
-      <td>${escapeHtml(l.twitch_channel)}</td>
-      <td>${escapeHtml(l.youtube_channel)}</td>
-      <td><button class="del-btn" data-id="${l.id}">Delete</button></td>
+      <td>${escapeHtml(g.label)}</td>
+      <td>${g.members.map(m => `
+        <span class="platform-badge ${m.platform}" style="margin-right:6px">${PLATFORM_BADGE[m.platform] || m.platform}</span>${escapeHtml(m.channel)}
+        <button class="del-btn" data-alias="${m.id}" style="padding:1px 6px;margin:0 10px 4px 4px">×</button>
+      `).join("<br>")}</td>
+      <td><button class="del-btn" data-group="${g.id}">Delete</button></td>
     </tr>
   `).join("");
-  tbody.querySelectorAll(".del-btn").forEach(btn => {
+  tbody.querySelectorAll(".del-btn[data-alias]").forEach(btn => {
     btn.addEventListener("click", async () => {
-      await apiReq("DELETE", `/settings/channel-links/${btn.dataset.id}`);
-      loadLinks().catch(console.error);
+      await apiReq("DELETE", `/settings/creator-links/alias/${btn.dataset.alias}`);
+      loadCreators().catch(console.error);
+    });
+  });
+  tbody.querySelectorAll(".del-btn[data-group]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await apiReq("DELETE", `/settings/creator-links/group/${btn.dataset.group}`);
+      loadCreators().catch(console.error);
     });
   });
 }
@@ -98,18 +112,26 @@ async function loadAccounts() {
   });
 }
 
-$("add-form").addEventListener("submit", async (e) => {
+$("add-creator-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const twitch = $("input-twitch").value.trim().toLowerCase();
-  const youtube = $("input-youtube").value.trim().toLowerCase();
-  if (!twitch || !youtube) return;
-  await apiReq("POST", "/settings/channel-links", {
-    twitch_channel: twitch,
-    youtube_channel: youtube,
-  });
-  $("input-twitch").value = "";
-  $("input-youtube").value = "";
-  loadLinks().catch(console.error);
+  const label = $("input-creator-label").value.trim();
+  const platform = $("input-creator-platform").value;
+  const channel = $("input-creator-channel").value.trim().toLowerCase();
+  const status = $("creator-status");
+  if (!label || !channel) {
+    status.textContent = "Enter a creator name and a channel handle.";
+    return;
+  }
+  try {
+    await apiReq("POST", "/settings/creator-links", { label, platform, channel });
+    status.textContent = "";
+    $("input-creator-channel").value = "";
+    loadCreators().catch(console.error);
+  } catch (err) {
+    status.textContent = err.message.includes("409")
+      ? "That channel is already linked to a creator."
+      : `Failed: ${err.message}`;
+  }
 });
 
 $("add-account-form").addEventListener("submit", async (e) => {
@@ -328,7 +350,7 @@ $("gdrive-disconnect-btn").addEventListener("click", async () => {
 });
 
 async function boot() {
-  await Promise.all([loadLinks(), loadAccounts(), loadCustomAvatars(), loadChannelSuggestions(), loadGdriveStatus()]);
+  await Promise.all([loadCreators(), loadAccounts(), loadCustomAvatars(), loadChannelSuggestions(), loadGdriveStatus()]);
 }
 
 if (state.apiKey) {
