@@ -235,6 +235,7 @@ docker exec twitch-watch-api sh -c \
 | `GDRIVE_CLIENT_SECRET` | No | — | Google OAuth client secret |
 | `PLEX_BASE_URL` | No | — | Plex Media Server URL, e.g. `http://192.168.1.10:32400` (enables Plex poller) |
 | `PLEX_TOKEN` | No | — | Plex auth token ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) |
+| `PLEX_CHANNEL_FROM_STUDIO` | No | `false` | Use the Plex item's `studio` field as the channel/author (falls back to show title when empty) |
 | `TZ` | No | `UTC` | Timezone for "today" calculations |
 
 ### Plex tracking
@@ -244,3 +245,10 @@ startup the API polls `{PLEX_BASE_URL}/status/sessions` every
 `HEARTBEAT_INTERVAL_SECONDS` and records one heartbeat per actively-playing
 video session (movies, episodes, clips — music is skipped). This captures
 playback from any Plex client (TV, phone, native apps), not just the browser.
+
+By default the **channel/author** is the Plex series/show title (or the movie
+title for movies). If you archive a creator's videos in Plex and want them to
+line up with that creator's Twitch/YouTube channel, either name the Plex *show*
+with their handle, or set `PLEX_CHANNEL_FROM_STUDIO=true` and put the handle in
+each item's **Studio** field. Either way, matching across platforms is explicit:
+link the channels under one creator in **Settings → Creator links**.

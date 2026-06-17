@@ -45,6 +45,10 @@ selectors will need periodic maintenance.
 `{PLEX_BASE_URL}/status/sessions` every `HEARTBEAT_INTERVAL_SECONDS` and writes
 one `media_heartbeats` row (platform `plex`) per actively-playing video session.
 This captures every device, not just the browser. Music tracks are skipped.
+The channel/author defaults to the series/show (or movie) title; setting
+`PLEX_CHANNEL_FROM_STUDIO=true` makes the poller use the item's `studio` field
+instead (falling back to the title), so an archived creator's handle can line up
+with their Twitch/YouTube channel for manual creator-linking.
 
 ### Frontend
 

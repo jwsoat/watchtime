@@ -167,6 +167,41 @@ def test_plex_rows_from_sessions_maps_fields():
     assert rows[1][5] == "passive"
 
 
+def test_plex_channel_from_studio_when_enabled():
+    import plex_poller
+    payload = {"MediaContainer": {"Metadata": [
+        {"type": "movie", "title": "Some Upload", "studio": "MrBeast",
+         "ratingKey": 1, "User": {"title": "Me"}, "Player": {"state": "playing"}},
+        {"type": "movie", "title": "No Studio Vid", "grandparentTitle": "Archive",
+         "ratingKey": 2, "User": {"title": "Me"}, "Player": {"state": "playing"}},
+    ]}}
+    rows = plex_poller._rows_from_sessions(payload, now=1000, channel_from_studio=True)
+    # studio used when present, lowercased
+    assert rows[0][2] == "mrbeast"
+    # falls back to grandparentTitle/title when studio is missing
+    assert rows[1][2] == "archive"
+
+
+def test_plex_studio_ignored_by_default():
+    import plex_poller
+    payload = {"MediaContainer": {"Metadata": [
+        {"type": "movie", "title": "Some Upload", "studio": "MrBeast",
+         "ratingKey": 1, "User": {"title": "Me"}, "Player": {"state": "playing"}},
+    ]}}
+    rows = plex_poller._rows_from_sessions(payload, now=1000)
+    assert rows[0][2] == "some upload"  # title, studio ignored
+
+
+def test_plex_channel_from_studio_env(monkeypatch):
+    import plex_poller
+    monkeypatch.setenv("PLEX_CHANNEL_FROM_STUDIO", "true")
+    assert plex_poller._channel_from_studio() is True
+    monkeypatch.setenv("PLEX_CHANNEL_FROM_STUDIO", "0")
+    assert plex_poller._channel_from_studio() is False
+    monkeypatch.delenv("PLEX_CHANNEL_FROM_STUDIO", raising=False)
+    assert plex_poller._channel_from_studio() is False
+
+
 def test_plex_not_configured_by_default(monkeypatch):
     import plex_poller
     monkeypatch.delenv("PLEX_BASE_URL", raising=False)

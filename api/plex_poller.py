@@ -28,6 +28,14 @@ def is_configured() -> bool:
     return bool(os.environ.get("PLEX_BASE_URL") and os.environ.get("PLEX_TOKEN"))
 
 
+def _truthy(value) -> bool:
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _channel_from_studio() -> bool:
+    return _truthy(os.environ.get("PLEX_CHANNEL_FROM_STUDIO"))
+
+
 def _fetch_sessions(base_url: str, token: str):
     url = f"{base_url.rstrip('/')}/status/sessions"
     req = urllib.request.Request(
@@ -38,8 +46,14 @@ def _fetch_sessions(base_url: str, token: str):
         return json.loads(resp.read())
 
 
-def _rows_from_sessions(payload: dict, now: int):
-    """Turn a Plex /status/sessions JSON payload into media_heartbeats rows."""
+def _rows_from_sessions(payload: dict, now: int, channel_from_studio: bool = False):
+    """Turn a Plex /status/sessions JSON payload into media_heartbeats rows.
+
+    When `channel_from_studio` is set, the item's `studio` field is used as the
+    channel (falling back to the series/title when empty) — useful for putting a
+    creator's canonical handle on personal-media items so it lines up with their
+    Twitch/YouTube channel for manual creator-linking.
+    """
     container = payload.get("MediaContainer", {}) if isinstance(payload, dict) else {}
     metadata = container.get("Metadata", []) or []
     rows = []
@@ -48,7 +62,11 @@ def _rows_from_sessions(payload: dict, now: int):
             continue
         player_state = (item.get("Player") or {}).get("state", "")
         # The show/series for episodes, otherwise the title itself (movies).
-        channel = item.get("grandparentTitle") or item.get("title")
+        # Optionally prefer the curated `studio` field.
+        channel = None
+        if channel_from_studio:
+            channel = item.get("studio")
+        channel = channel or item.get("grandparentTitle") or item.get("title")
         if not channel:
             continue
         title = item.get("title")
@@ -81,10 +99,11 @@ def _insert(db_path: str, rows):
 def _loop(db_path: str, interval: int):
     base_url = os.environ["PLEX_BASE_URL"]
     token = os.environ["PLEX_TOKEN"]
+    from_studio = _channel_from_studio()
     while True:
         try:
             payload = _fetch_sessions(base_url, token)
-            _insert(db_path, _rows_from_sessions(payload, int(time.time())))
+            _insert(db_path, _rows_from_sessions(payload, int(time.time()), from_studio))
         except Exception as err:  # noqa: BLE001 — keep the poller alive
             print(f"[watchtime] plex poll failed: {err}")
         time.sleep(interval)
