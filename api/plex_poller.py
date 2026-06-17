@@ -91,7 +91,14 @@ def _fetch_studio(base_url: str, token: str, rating_key: str):
 
 
 def _rows_from_sessions(payload: dict, now: int, channel_from_studio: bool = False,
-                        base_url: str = None, token: str = None):
+                        base_url: str = None, token: str = None, remaps: dict = None):
+    """Build heartbeat rows from a /status/sessions payload.
+
+    When channel_from_studio is True and the studio is later discovered for a
+    show whose earlier episodes had been recorded under `grandparentTitle`
+    (because Plex hadn't populated `studio` yet), add an entry to `remaps`
+    (a dict {old_channel_lower: new_channel_lower}) so the caller can
+    retroactively reattribute historical rows."""
     container = payload.get("MediaContainer", {}) if isinstance(payload, dict) else {}
     metadata = container.get("Metadata", []) or []
     rows = []
@@ -100,12 +107,22 @@ def _rows_from_sessions(payload: dict, now: int, channel_from_studio: bool = Fal
             continue
         player_state = (item.get("Player") or {}).get("state", "")
         channel = None
+        used_studio = False
         if channel_from_studio:
             channel = item.get("studio")
-            # Episodes don't carry their show's studio field in /status/sessions
-            # — fetch the grandparent (show) metadata to inherit it.
-            if not channel and item.get("grandparentRatingKey") and base_url and token:
+            if channel:
+                used_studio = True
+            elif item.get("grandparentRatingKey") and base_url and token:
                 channel = _fetch_studio(base_url, token, str(item["grandparentRatingKey"]))
+                if channel:
+                    used_studio = True
+        if used_studio and remaps is not None:
+            grand = item.get("grandparentTitle")
+            if grand:
+                grand_lc = grand.lower()
+                studio_lc = channel.lower()
+                if grand_lc != studio_lc:
+                    remaps[grand_lc] = studio_lc
         channel = channel or item.get("grandparentTitle") or item.get("title")
         if not channel:
             continue
@@ -150,16 +167,46 @@ def _insert(db_path: str, rows):
         conn.close()
 
 
+# Reassignments we've already applied this process lifetime — avoids running
+# the same UPDATE on every poll once the rename has converged.
+_APPLIED_REMAPS = set()
+
+
+def _apply_remaps(db_path: str, remaps: dict):
+    """Idempotently rename historical Plex rows from grandparentTitle to the
+    show's studio once that studio becomes known."""
+    if not remaps:
+        return
+    fresh = {old: new for old, new in remaps.items() if (old, new) not in _APPLIED_REMAPS}
+    if not fresh:
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        for old, new in fresh.items():
+            conn.execute(
+                "UPDATE media_heartbeats SET channel = ? "
+                "WHERE platform = 'plex' AND channel = ?",
+                (new, old),
+            )
+            _APPLIED_REMAPS.add((old, new))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _loop(db_path: str, interval: int):
     while True:
         base_url, token, from_studio = _read_config(db_path)
         if base_url and token:
             try:
                 payload = _fetch_sessions(base_url, token)
-                _insert(db_path, _rows_from_sessions(
+                remaps = {}
+                rows = _rows_from_sessions(
                     payload, int(time.time()), from_studio,
-                    base_url=base_url, token=token,
-                ))
+                    base_url=base_url, token=token, remaps=remaps,
+                )
+                _insert(db_path, rows)
+                _apply_remaps(db_path, remaps)
             except Exception as err:  # noqa: BLE001 — keep the poller alive
                 print(f"[watchtime] plex poll failed: {err}")
         time.sleep(interval)
