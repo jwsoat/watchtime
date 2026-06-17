@@ -1,15 +1,18 @@
 # Watchtime Tracker
 
-Personal watch time logger for **Twitch** and **YouTube**. A browser extension
-sends heartbeats to a self-hosted API, which stores them in SQLite and serves a
-multi-platform dashboard.
+Personal watch time logger for **Twitch**, **YouTube**, **X (Twitter)**,
+**Facebook**, **Instagram** and **Plex**. A browser extension sends heartbeats
+to a self-hosted API, which stores them in SQLite and serves a multi-platform
+dashboard. Plex is tracked server-side by polling a Plex Media Server, so it
+captures playback on every device, not just the browser.
 
 Live at **stats.jwsoat.co.nz**.
 
 ## How it works
 
-The extension runs a heartbeat timer on twitch.tv and youtube.com pages. Every
-tick (10s Twitch, 60s YouTube), if a video is playing, it records:
+The extension runs a heartbeat timer on twitch.tv, youtube.com, x.com,
+facebook.com and instagram.com pages. Every tick (~10s), if a video is playing,
+it records:
 
 - channel name
 - timestamp (Unix seconds UTC)
@@ -33,11 +36,15 @@ Four views behind an API key gate:
 | `/` | **Merged** — combined Twitch + YouTube rankings, daily chart, quick stats |
 | `/twitch` | Twitch-only — channels, categories, daily chart |
 | `/youtube` | YouTube-only — channels, videos, daily chart |
+| `/x` `/facebook` `/instagram` `/plex` | Per-source — top accounts, top videos, daily chart |
 | `/tv` | Ambient scoreboard with rotating panels (point a spare display here) |
 | `/settings` | Accounts, channel links, avatars, data management, Google Drive backup |
 
-**Merged view** ranks all channels across both platforms in two columns (odd
-ranks left, even right, up to 40 total). Platform badges (TW/YT) indicate source.
+**Merged view** ranks creators across **all** platforms in two columns (odd
+ranks left, even right, up to 40 total). Platform badges (TW/YT/X/FB/IG/PLEX)
+indicate source. Channels linked as the same creator (see **Creator links** in
+Settings) roll up into a single combined row — e.g. watching the same creator on
+YouTube and Plex counts as one.
 
 **Account picker** lets you filter by linked Twitch + YouTube account pairs.
 Configure these in Settings.
@@ -89,6 +96,7 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | POST | `/heartbeat` | Single Twitch heartbeat |
 | POST | `/heartbeats` | Batched Twitch heartbeats |
 | POST | `/youtube/heartbeats` | Batched YouTube heartbeats |
+| POST | `/media/heartbeats` | Batched heartbeats for x / facebook / instagram / plex (each carries its own `platform`) |
 
 ### Twitch stats
 
@@ -122,16 +130,50 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | GET | `/stats/youtube/playlists` | Playlist stats |
 | GET | `/stats/youtube/users` | Known YouTube users |
 
+### Other sources (X, Facebook, Instagram, Plex)
+
+`{platform}` is one of `x`, `facebook`, `instagram`, `plex`.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/stats/media/{platform}/today` | Per-account seconds since midnight |
+| GET | `/stats/media/{platform}/week` | Last 7 days |
+| GET | `/stats/media/{platform}/month` | Last 30 days |
+| GET | `/stats/media/{platform}/all` | All time |
+| GET | `/stats/media/{platform}/daily?days=30` | Seconds per day |
+| GET | `/stats/media/{platform}/videos` | Video/post rankings |
+| GET | `/stats/media/{platform}/now` | Currently watching |
+| GET | `/stats/media/{platform}/users` | Known accounts |
+
 Add `?include_passive=false` to exclude idle time. Add `?user=<handle>` to
 filter by account. Add `?platform=twitch|youtube` on shared endpoints.
+
+> **Note on attribution:** X, Facebook and Instagram are tracked by scraping the
+> page DOM, which these sites obfuscate and change frequently. Playback *time* is
+> reliable; the detected account/title is best-effort and may occasionally be
+> missing. Expect to refresh the content-script selectors over time.
+
+### Merged (cross-platform)
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/stats/merged/channels?window=today` | Per-creator watch time rolled up across every platform; linked creators collapse into one row |
+| GET | `/stats/merged/daily?days=30` | Combined watch time per day across every platform |
+
+`?user=<label>` filters Twitch + YouTube by a user-account label (media
+platforms have no viewer-account linking and are always included).
 
 ### Settings
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/settings/channel-links` | List Twitch-YouTube channel pairs |
-| POST | `/settings/channel-links` | Add link |
-| DELETE | `/settings/channel-links/{id}` | Remove link |
+| GET | `/settings/creator-links` | List creator groups + their per-platform channels |
+| POST | `/settings/creator-links` | Add a channel to a creator group (by label) |
+| DELETE | `/settings/creator-links/alias/{id}` | Remove one channel from a creator |
+| DELETE | `/settings/creator-links/group/{id}` | Remove a whole creator group |
+| GET | `/settings/channel-links` | (Legacy) Twitch-YouTube channel pairs; migrated into creator links |
+| POST | `/settings/channel-links` | (Legacy) Add Twitch-YouTube pair |
+| DELETE | `/settings/channel-links/{id}` | (Legacy) Remove pair |
 | GET | `/settings/user-accounts` | List account pairs |
 | POST | `/settings/user-accounts` | Add account |
 | DELETE | `/settings/user-accounts/{id}` | Remove account |
@@ -191,4 +233,22 @@ docker exec twitch-watch-api sh -c \
 | `HEARTBEAT_INTERVAL_SECONDS` | No | `10` | Heartbeat-to-seconds multiplier |
 | `GDRIVE_CLIENT_ID` | No | — | Google OAuth client ID (for Drive backup) |
 | `GDRIVE_CLIENT_SECRET` | No | — | Google OAuth client secret |
+| `PLEX_BASE_URL` | No | — | Plex Media Server URL, e.g. `http://192.168.1.10:32400` (enables Plex poller) |
+| `PLEX_TOKEN` | No | — | Plex auth token ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) |
+| `PLEX_CHANNEL_FROM_STUDIO` | No | `false` | Use the Plex item's `studio` field as the channel/author (falls back to show title when empty) |
 | `TZ` | No | `UTC` | Timezone for "today" calculations |
+
+### Plex tracking
+
+Set `PLEX_BASE_URL` and `PLEX_TOKEN` to enable the server-side Plex poller. On
+startup the API polls `{PLEX_BASE_URL}/status/sessions` every
+`HEARTBEAT_INTERVAL_SECONDS` and records one heartbeat per actively-playing
+video session (movies, episodes, clips — music is skipped). This captures
+playback from any Plex client (TV, phone, native apps), not just the browser.
+
+By default the **channel/author** is the Plex series/show title (or the movie
+title for movies). If you archive a creator's videos in Plex and want them to
+line up with that creator's Twitch/YouTube channel, either name the Plex *show*
+with their handle, or set `PLEX_CHANNEL_FROM_STUDIO=true` and put the handle in
+each item's **Studio** field. Either way, matching across platforms is explicit:
+link the channels under one creator in **Settings → Creator links**.

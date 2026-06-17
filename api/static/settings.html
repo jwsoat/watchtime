@@ -35,6 +35,10 @@
         <a href="/">Merged</a>
         <a href="/twitch">Twitch</a>
         <a href="/youtube">YouTube</a>
+        <a href="/x">X</a>
+        <a href="/facebook">Facebook</a>
+        <a href="/instagram">Instagram</a>
+        <a href="/plex">Plex</a>
         <a href="/settings" class="active">Settings</a>
       </nav>
     </div>
@@ -85,6 +89,10 @@
         <select id="input-avatar-platform" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px;">
           <option value="twitch">Twitch</option>
           <option value="youtube">YouTube</option>
+          <option value="x">X</option>
+          <option value="facebook">Facebook</option>
+          <option value="instagram">Instagram</option>
+          <option value="plex">Plex</option>
         </select>
         <input id="input-avatar-channel" type="text" placeholder="Channel handle" list="channel-suggestions" autocomplete="off" style="flex:1;min-width:120px">
         <datalist id="channel-suggestions"></datalist>
@@ -147,25 +155,37 @@
     </div>
 
     <div class="card" style="max-width:640px">
-      <h2>Channel links</h2>
+      <h2>Creator links</h2>
       <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
-        Link a Twitch channel to a YouTube channel so they appear as one combined row on the merged dashboard.
+        Link the same creator's channels across platforms (Twitch, YouTube, X,
+        Facebook, Instagram, Plex) under one name. Watching that creator on any
+        platform rolls up into a single combined row on the merged dashboard.
+        Add each platform's channel using the same creator name.
       </p>
       <table>
         <thead>
           <tr>
-            <th>Twitch channel</th>
-            <th>YouTube channel</th>
+            <th>Creator</th>
+            <th>Linked channels</th>
             <th></th>
           </tr>
         </thead>
-        <tbody id="links-tbody"></tbody>
+        <tbody id="creator-tbody"></tbody>
       </table>
-      <form id="add-form" class="add-row">
-        <input id="input-twitch" type="text" placeholder="Twitch handle (e.g. xqc)" autocomplete="off">
-        <input id="input-youtube" type="text" placeholder="YouTube handle (e.g. xqcow)" autocomplete="off">
-        <button type="submit">Add link</button>
+      <form id="add-creator-form" class="add-row" style="align-items:center">
+        <input id="input-creator-label" type="text" placeholder="Creator name (e.g. MrBeast)" autocomplete="off" style="flex:1;min-width:140px">
+        <select id="input-creator-platform" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px;">
+          <option value="twitch">Twitch</option>
+          <option value="youtube">YouTube</option>
+          <option value="x">X</option>
+          <option value="facebook">Facebook</option>
+          <option value="instagram">Instagram</option>
+          <option value="plex">Plex</option>
+        </select>
+        <input id="input-creator-channel" type="text" placeholder="Channel handle" autocomplete="off" style="flex:1;min-width:120px">
+        <button type="submit">Add channel</button>
       </form>
+      <div id="creator-status" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
     </div>
   </div>
 

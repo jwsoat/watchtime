@@ -10,8 +10,14 @@ const state = {
   apiKey: localStorage.getItem(STORAGE_KEY) || null,
   twUser: null,
   ytUser: null,
+  accountLabel: null,
   window: "today",
   pollTimer: null,
+};
+
+const PLATFORM_BADGE = {
+  twitch: "TW", youtube: "YT", x: "X",
+  facebook: "FB", instagram: "IG", plex: "PLEX",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -38,6 +44,13 @@ function withYtUser(url) {
   if (!state.ytUser) return url;
   const sep = url.includes("?") ? "&" : "?";
   return `${url}${sep}user=${encodeURIComponent(state.ytUser)}`;
+}
+
+// Merged endpoints resolve a user_accounts *label* server-side.
+function withMergedUser(url) {
+  if (!state.accountLabel) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}user=${encodeURIComponent(state.accountLabel)}`;
 }
 
 function showGate(errMsg = "") {
@@ -88,6 +101,7 @@ async function loadAccountPicker() {
     opt.textContent = `${a.label} (${platforms.join("+")})`;
     opt.dataset.twitchUser = a.twitch_user || "";
     opt.dataset.youtubeUser = a.youtube_user || "";
+    opt.dataset.label = a.label;
     select.appendChild(opt);
   }
 
@@ -97,9 +111,11 @@ async function loadAccountPicker() {
     const opt = select.options[select.selectedIndex];
     state.twUser = opt.dataset.twitchUser || null;
     state.ytUser = opt.dataset.youtubeUser || null;
+    state.accountLabel = opt.dataset.label || null;
   } else {
     state.twUser = null;
     state.ytUser = null;
+    state.accountLabel = null;
   }
 }
 
@@ -108,10 +124,12 @@ $("account-picker").addEventListener("change", (e) => {
   if (e.target.value === "") {
     state.twUser = null;
     state.ytUser = null;
+    state.accountLabel = null;
     localStorage.removeItem(ACCOUNT_KEY);
   } else {
     state.twUser = opt.dataset.twitchUser || null;
     state.ytUser = opt.dataset.youtubeUser || null;
+    state.accountLabel = opt.dataset.label || null;
     localStorage.setItem(ACCOUNT_KEY, e.target.value);
   }
   refresh();
@@ -164,23 +182,16 @@ function avatarColor(name) {
 }
 
 async function updateHero() {
-  const [twToday, ytToday, twNow, ytNow] = await Promise.all([
-    api(withTwUser("/stats/today")),
-    api(withYtUser("/stats/youtube/today")),
+  const [today, twNow, ytNow] = await Promise.all([
+    api(withMergedUser("/stats/merged/channels?window=today")),
     api(withTwUser("/stats/now")),
     api(withYtUser("/stats/youtube/now")),
   ]);
 
-  const twSecs = twToday.channels.reduce((s, c) => s + c.seconds, 0);
-  const ytSecs = ytToday.channels.reduce((s, c) => s + c.seconds, 0);
-  $("today-value").textContent = fmtDuration(twSecs + ytSecs);
+  $("today-value").textContent = fmtDuration(today.total_seconds);
 
-  const allToday = [
-    ...twToday.channels.map(c => ({ ...c, platform: "twitch" })),
-    ...ytToday.channels.map(c => ({ ...c, platform: "youtube" })),
-  ].sort((a, b) => b.seconds - a.seconds);
-  const top = allToday[0];
-  $("top-channel").textContent = top ? top.channel : "—";
+  const top = today.rows[0];
+  $("top-channel").textContent = top ? top.label : "—";
   $("top-seconds").textContent = top ? fmtDuration(top.seconds) : "0 seconds";
 
   const now = twNow.channel ? twNow : (ytNow.channel ? ytNow : null);
@@ -197,45 +208,24 @@ async function updateHero() {
 }
 
 async function updateQuickStats() {
-  const [twAll, ytAll, twDaily, ytDaily] = await Promise.all([
-    api(withTwUser("/stats/all")),
-    api(withYtUser("/stats/youtube/all")),
-    api(withTwUser("/stats/daily?days=365")),
-    api(withYtUser("/stats/youtube/daily?days=365")),
+  const [all, daily] = await Promise.all([
+    api(withMergedUser("/stats/merged/channels?window=all")),
+    api(withMergedUser("/stats/merged/daily?days=365")),
   ]);
 
-  const totalSecs =
-    twAll.channels.reduce((s, c) => s + c.seconds, 0) +
-    ytAll.channels.reduce((s, c) => s + c.seconds, 0);
-  $("qs-total").textContent = fmtDuration(totalSecs);
+  $("qs-total").textContent = fmtDuration(all.total_seconds);
+  $("qs-channels").textContent = all.rows.length.toString();
 
-  const allChannels = new Set([
-    ...twAll.channels.map(c => c.channel),
-    ...ytAll.channels.map(c => c.channel),
-  ]);
-  $("qs-channels").textContent = allChannels.size.toString();
-
-  const dayMap = {};
-  for (const d of twDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
-  for (const d of ytDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
-  const longest = Object.values(dayMap).reduce((max, s) => (s > max ? s : max), 0);
+  const longest = daily.days.reduce((max, d) => (d.seconds > max ? d.seconds : max), 0);
   $("qs-longest").textContent = fmtDuration(longest);
 }
 
 let dailyChart = null;
 
 async function updateDailyChart() {
-  const [twDaily, ytDaily] = await Promise.all([
-    api(withTwUser("/stats/daily?days=30")),
-    api(withYtUser("/stats/youtube/daily?days=30")),
-  ]);
-
-  const dayMap = {};
-  for (const d of twDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
-  for (const d of ytDaily.days) dayMap[d.day] = (dayMap[d.day] || 0) + d.seconds;
-  const days = Object.keys(dayMap).sort();
-  const labels = days.map(d => d.slice(5));
-  const values = days.map(d => dayMap[d] / 3600);
+  const daily = await api(withMergedUser("/stats/merged/daily?days=30"));
+  const labels = daily.days.map(d => d.day.slice(5));
+  const values = daily.days.map(d => d.seconds / 3600);
 
   if (dailyChart) {
     dailyChart.data.labels = labels;
@@ -266,59 +256,9 @@ async function updateDailyChart() {
   });
 }
 
-function buildMergedRows(twChannels, ytChannels, links) {
-  const linkMap = {};
-  for (const l of links) {
-    if (!linkMap[l.twitch_channel]) linkMap[l.twitch_channel] = [];
-    linkMap[l.twitch_channel].push(l.youtube_channel);
-  }
-
-  const usedYt = new Set();
-  const rows = [];
-
-  for (const t of twChannels) {
-    const linked = linkMap[t.channel] || [];
-    let ytSeconds = 0;
-    const ytNames = [];
-    for (const ytCh of linked) {
-      const ytRow = ytChannels.find(y => y.channel === ytCh);
-      if (ytRow) {
-        ytSeconds += ytRow.seconds;
-        ytNames.push(ytCh);
-        usedYt.add(ytCh);
-      }
-    }
-    rows.push({
-      label: ytNames.length ? `${t.channel} / ${ytNames.join(", ")}` : t.channel,
-      seconds: t.seconds + ytSeconds,
-      platforms: ytNames.length ? ["twitch", "youtube"] : ["twitch"],
-      avatar: t.channel,
-    });
-  }
-
-  for (const y of ytChannels) {
-    if (!usedYt.has(y.channel)) {
-      rows.push({
-        label: y.channel,
-        seconds: y.seconds,
-        platforms: ["youtube"],
-        avatar: y.channel,
-      });
-    }
-  }
-
-  rows.sort((a, b) => b.seconds - a.seconds);
-  return rows;
-}
-
 async function updateMerged() {
-  const [twData, ytData, linksData] = await Promise.all([
-    api(withTwUser(`/stats/${state.window}`)),
-    api(withYtUser(`/stats/youtube/${state.window}`)),
-    api("/settings/channel-links"),
-  ]);
-
-  const rows = buildMergedRows(twData.channels, ytData.channels, linksData.links);
+  const data = await api(withMergedUser(`/stats/merged/channels?window=${state.window}`));
+  const rows = data.rows;
   const max = rows[0]?.seconds || 1;
   const leftRoot = $("merged-left");
   const rightRoot = $("merged-right");
@@ -328,13 +268,14 @@ async function updateMerged() {
   rows.slice(0, 40).forEach((row, i) => {
     const rank = i + 1;
     const badges = row.platforms.map(p =>
-      `<span class="platform-badge ${p}">${p === "twitch" ? "TW" : "YT"}</span>`
+      `<span class="platform-badge ${p}">${PLATFORM_BADGE[p] || p.toUpperCase()}</span>`
     ).join(" ");
+    const primary = row.primary;
     const el = document.createElement("div");
     el.className = "ranked-row";
     el.innerHTML = `
       <div class="rank mono">#${rank}</div>
-      <div class="avatar" style="background:${avatarColor(row.avatar)}">${row.avatar[0].toUpperCase()}<img src="/avatars/${row.platforms[0]}/${encodeURIComponent(row.avatar)}" alt="" onerror="this.remove()"></div>
+      <div class="avatar" style="background:${avatarColor(row.label)}">${row.label[0].toUpperCase()}<img src="/avatars/${primary.platform}/${encodeURIComponent(primary.channel)}" alt="" onerror="this.remove()"></div>
       <div class="name">${row.label} ${badges}</div>
       <div class="value mono">${fmtDuration(row.seconds)}</div>
       <div class="bar"><span style="width:${(row.seconds / max * 100).toFixed(1)}%"></span></div>

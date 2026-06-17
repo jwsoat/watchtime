@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>YouTube Watchtime</title>
+  <title>Watchtime</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <div id="gate" class="gate hidden">
     <div class="card">
-      <h2>YouTube Watchtime</h2>
+      <h2 id="gate-title">Watchtime</h2>
       <p style="color:var(--muted); margin-top:8px; font-size:13px;">
         Paste your API key to unlock the dashboard.
       </p>
@@ -21,21 +21,21 @@
 
   <div id="app" class="page hidden">
     <div class="topbar">
-      <h1>YouTube Watchtime</h1>
+      <h1 id="page-title">Watchtime</h1>
       <nav class="topnav">
         <a href="/">Merged</a>
         <a href="/twitch">Twitch</a>
-        <a href="/youtube" class="active">YouTube</a>
-        <a href="/x">X</a>
-        <a href="/facebook">Facebook</a>
-        <a href="/instagram">Instagram</a>
-        <a href="/plex">Plex</a>
+        <a href="/youtube">YouTube</a>
+        <a href="/x" data-platform="x">X</a>
+        <a href="/facebook" data-platform="facebook">Facebook</a>
+        <a href="/instagram" data-platform="instagram">Instagram</a>
+        <a href="/plex" data-platform="plex">Plex</a>
         <a href="/settings">Settings</a>
       </nav>
       <select id="account-picker" class="account-picker"></select>
     </div>
 
-    <div class="card hero yt">
+    <div class="card hero media">
       <div>
         <div class="today-label">Today</div>
         <div class="today-value mono" id="today-value">0h 0m</div>
@@ -65,7 +65,7 @@
 
     <div class="grid">
       <div class="card">
-        <h2 id="top-channels-label">Top channels — Today</h2>
+        <h2 id="top-channels-label">Top accounts — Today</h2>
         <div id="top-channels" class="ranked"></div>
       </div>
       <div class="card">
@@ -85,7 +85,7 @@
           </div>
           <div class="mini">
             <div class="val mono" id="qs-channels">0</div>
-            <div class="lbl">Channels watched</div>
+            <div class="lbl" id="qs-channels-lbl">Accounts watched</div>
           </div>
           <div class="mini">
             <div class="val mono" id="qs-longest">0h</div>
@@ -97,6 +97,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/static/youtube.js"></script>
+  <script src="/static/media.js"></script>
 </body>
 </html>

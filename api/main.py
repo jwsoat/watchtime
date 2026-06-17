@@ -28,6 +28,11 @@ API_KEY = os.environ["API_KEY"]
 DB_PATH = os.environ.get("DB_PATH", "/data/watchtime.db")
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "60"))
 
+# Additional "generic" video sources stored in one table with a platform
+# discriminator. X/Twitter, Facebook and Instagram are tracked by the browser
+# extension; Plex is tracked server-side by polling a Plex Media Server.
+MEDIA_PLATFORMS = {"x", "facebook", "instagram", "plex"}
+
 app = FastAPI(title="Twitch Watch Time API", version="0.1.0")
 
 # Allow extension origins. Manifest V3 extensions send Origin like
@@ -82,6 +87,26 @@ def youtube_page():
     return _serve_html(STATIC_DIR / "youtube.html")
 
 
+@app.get("/x", include_in_schema=False)
+def x_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
+@app.get("/facebook", include_in_schema=False)
+def facebook_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
+@app.get("/instagram", include_in_schema=False)
+def instagram_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
+@app.get("/plex", include_in_schema=False)
+def plex_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page():
     return _serve_html(STATIC_DIR / "settings.html")
@@ -89,11 +114,66 @@ def settings_page():
 
 # ---------- DB ----------
 
+# All platforms that can participate in cross-platform creator linking.
+ALL_PLATFORMS = ("twitch", "youtube", "x", "facebook", "instagram", "plex")
+
+
 def migrate_db(conn):
     """Idempotent column additions and other schema migrations."""
     cols = {row[1] for row in conn.execute("PRAGMA table_info(heartbeats)")}
     if "twitch_user" not in cols:
         conn.execute("ALTER TABLE heartbeats ADD COLUMN twitch_user TEXT")
+    _migrate_channel_links_to_creators(conn)
+
+
+def _migrate_channel_links_to_creators(conn):
+    """Fold legacy twitch/youtube channel_links into the generic creator model.
+
+    Idempotent: aliases are UNIQUE(platform, channel), and existing groups are
+    reused, so re-running never duplicates. Legacy channel_links rows are left
+    in place for backward compatibility.
+    """
+    try:
+        links = conn.execute(
+            "SELECT twitch_channel, youtube_channel FROM channel_links"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return  # tables not created yet
+    for tw, yt in links:
+        members = [("twitch", tw), ("youtube", yt)]
+        # Reuse a group if either alias already exists.
+        group_id = None
+        for platform, channel in members:
+            row = conn.execute(
+                "SELECT group_id FROM creator_aliases WHERE platform = ? AND channel = ?",
+                (platform, channel),
+            ).fetchone()
+            if row:
+                group_id = row[0]
+                break
+        if group_id is None:
+            group_id = _create_creator_group(conn, tw)
+        for platform, channel in members:
+            conn.execute(
+                "INSERT OR IGNORE INTO creator_aliases (group_id, platform, channel) "
+                "VALUES (?, ?, ?)",
+                (group_id, platform, channel),
+            )
+
+
+def _create_creator_group(conn, desired_label):
+    """Insert a creator_groups row, disambiguating the label if it collides."""
+    label = desired_label
+    suffix = 2
+    while True:
+        try:
+            cur = conn.execute(
+                "INSERT INTO creator_groups (label) VALUES (?)", (label,)
+            )
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            label = f"{desired_label} ({suffix})"
+            suffix += 1
 
 
 def init_db():
@@ -129,12 +209,41 @@ def init_db():
                 ON youtube_heartbeats(ts);
             CREATE INDEX IF NOT EXISTS idx_yt_channel_ts
                 ON youtube_heartbeats(channel, ts);
+            CREATE TABLE IF NOT EXISTS media_heartbeats (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts          INTEGER NOT NULL,
+                platform    TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex')),
+                channel     TEXT    NOT NULL,
+                title       TEXT,
+                video_id    TEXT,
+                state       TEXT    NOT NULL CHECK(state IN ('active','passive')),
+                tab_visible INTEGER NOT NULL CHECK(tab_visible IN (0,1)),
+                media_user  TEXT,
+                client_id   TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_media_platform_ts
+                ON media_heartbeats(platform, ts);
+            CREATE INDEX IF NOT EXISTS idx_media_platform_channel_ts
+                ON media_heartbeats(platform, channel, ts);
             CREATE TABLE IF NOT EXISTS channel_links (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 twitch_channel  TEXT NOT NULL,
                 youtube_channel TEXT NOT NULL,
                 UNIQUE(twitch_channel, youtube_channel)
             );
+            CREATE TABLE IF NOT EXISTS creator_groups (
+                id    INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT NOT NULL UNIQUE
+            );
+            CREATE TABLE IF NOT EXISTS creator_aliases (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                group_id INTEGER NOT NULL,
+                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex')),
+                channel  TEXT NOT NULL,
+                UNIQUE(platform, channel)
+            );
+            CREATE INDEX IF NOT EXISTS idx_creator_aliases_group
+                ON creator_aliases(group_id);
             CREATE TABLE IF NOT EXISTS user_accounts (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 label         TEXT NOT NULL,
@@ -201,6 +310,22 @@ class YoutubeHeartbeatBatch(BaseModel):
     heartbeats: list[YoutubeHeartbeat]
 
 
+class MediaHeartbeat(BaseModel):
+    ts: int = Field(..., description="Unix seconds, UTC")
+    platform: str = Field(..., pattern="^(x|facebook|instagram|plex)$")
+    channel: str = Field(..., min_length=1, max_length=128)
+    title: Optional[str] = Field(default=None, max_length=512)
+    video_id: Optional[str] = Field(default=None, max_length=128)
+    state: str = Field(..., pattern="^(active|passive)$")
+    tab_visible: bool
+    client_id: str = Field(..., min_length=1, max_length=64)
+    media_user: Optional[str] = Field(default=None, max_length=128)
+
+
+class MediaHeartbeatBatch(BaseModel):
+    heartbeats: list[MediaHeartbeat]
+
+
 class ChannelLink(BaseModel):
     twitch_channel: str = Field(..., min_length=1, max_length=64)
     youtube_channel: str = Field(..., min_length=1, max_length=128)
@@ -210,6 +335,12 @@ class UserAccount(BaseModel):
     label: str = Field(..., min_length=1, max_length=64)
     twitch_user: Optional[str] = Field(default=None, max_length=64)
     youtube_user: Optional[str] = Field(default=None, max_length=128)
+
+
+class CreatorAlias(BaseModel):
+    label: str = Field(..., min_length=1, max_length=128)
+    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex)$")
+    channel: str = Field(..., min_length=1, max_length=128)
 
 
 # ---------- Endpoints ----------
@@ -257,9 +388,21 @@ def list_custom_avatars():
     return {"avatars": [{"platform": k.split(":")[0], "channel": k.split(":")[1]} for k in index]}
 
 
+# unavatar.io provider names keyed by our internal platform name. Plex has no
+# avatar provider, so it falls through to the initials placeholder in the UI.
+_AVATAR_PROVIDERS = {
+    "twitch": "twitch",
+    "youtube": "youtube",
+    "x": "twitter",
+    "facebook": "facebook",
+    "instagram": "instagram",
+}
+
+
 @app.get("/avatars/{platform}/{channel}")
 def get_avatar(platform: str, channel: str):
-    if platform not in ("twitch", "youtube"):
+    provider = _AVATAR_PROVIDERS.get(platform)
+    if provider is None:
         raise HTTPException(status_code=404)
     _AVATAR_DIR.mkdir(exist_ok=True)
     safe = _avatar_safe(channel)
@@ -274,7 +417,7 @@ def get_avatar(platform: str, channel: str):
         data = cache_file.read_bytes()
         return Response(content=data, media_type=_detect_ct(data), headers={"Cache-Control": "public, max-age=604800"})
     try:
-        url = f"https://unavatar.io/{platform}/{urllib.parse.quote(channel)}?fallback=404"
+        url = f"https://unavatar.io/{provider}/{urllib.parse.quote(channel)}?fallback=404"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = resp.read()
@@ -286,7 +429,7 @@ def get_avatar(platform: str, channel: str):
 
 @app.post("/avatars/{platform}/{channel}", dependencies=[Depends(require_api_key)])
 async def set_custom_avatar(platform: str, channel: str, file: UploadFile = File(...)):
-    if platform not in ("twitch", "youtube"):
+    if platform not in _AVATAR_PROVIDERS and platform not in MEDIA_PLATFORMS:
         raise HTTPException(status_code=404)
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
@@ -365,6 +508,27 @@ def youtube_heartbeats_batch(batch: YoutubeHeartbeatBatch):
     return {"ok": True, "stored": len(rows)}
 
 
+@app.post("/media/heartbeats", dependencies=[Depends(require_api_key)])
+def media_heartbeats_batch(batch: MediaHeartbeatBatch):
+    """Ingest heartbeats for the generic video sources (x, facebook, instagram,
+    plex). Each heartbeat carries its own `platform` so a single extension queue
+    can serve all browser-tracked sources."""
+    rows = [
+        (hb.ts, hb.platform, hb.channel.lower(), hb.title, hb.video_id,
+         hb.state, int(hb.tab_visible),
+         hb.media_user.lower() if hb.media_user else None, hb.client_id)
+        for hb in batch.heartbeats
+    ]
+    with db() as conn:
+        conn.executemany(
+            "INSERT INTO media_heartbeats "
+            "(ts, platform, channel, title, video_id, state, tab_visible, media_user, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    return {"ok": True, "stored": len(rows)}
+
+
 @app.get("/stats/channels", dependencies=[Depends(require_api_key)])
 def all_channels():
     with db() as conn:
@@ -374,7 +538,13 @@ def all_channels():
         yt = [r["channel"] for r in conn.execute(
             "SELECT DISTINCT channel FROM youtube_heartbeats ORDER BY channel"
         ).fetchall()]
-    return {"twitch": tw, "youtube": yt}
+        media = {}
+        for p in sorted(MEDIA_PLATFORMS):
+            media[p] = [r["channel"] for r in conn.execute(
+                "SELECT DISTINCT channel FROM media_heartbeats WHERE platform = ? ORDER BY channel",
+                (p,),
+            ).fetchall()]
+    return {"twitch": tw, "youtube": yt, **media}
 
 
 @app.get("/stats/youtube/users", dependencies=[Depends(require_api_key)])
@@ -495,6 +665,107 @@ def yt_stats_videos(window: str = "today", user: Optional[str] = None):
     }
 
 
+def _validate_media_platform(platform: str):
+    if platform not in MEDIA_PLATFORMS:
+        raise HTTPException(status_code=404, detail=f"unknown platform '{platform}'")
+
+
+@app.get("/stats/media/{platform}/users", dependencies=[Depends(require_api_key)])
+def media_stats_users(platform: str):
+    _validate_media_platform(platform)
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT media_user AS user, MAX(ts) AS last_ts, COUNT(*) AS count
+            FROM media_heartbeats
+            WHERE platform = ? AND media_user IS NOT NULL
+            GROUP BY media_user
+            ORDER BY last_ts DESC
+        """, (platform,)).fetchall()
+    return {
+        "users": [
+            {"user": r["user"], "last_ts": r["last_ts"], "count": r["count"]}
+            for r in rows
+        ]
+    }
+
+
+@app.get("/stats/media/{platform}/today", dependencies=[Depends(require_api_key)])
+def media_stats_today(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, _local_midnight(), include_passive, user)
+
+
+@app.get("/stats/media/{platform}/week", dependencies=[Depends(require_api_key)])
+def media_stats_week(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, int(time.time()) - 7 * 86400, include_passive, user)
+
+
+@app.get("/stats/media/{platform}/month", dependencies=[Depends(require_api_key)])
+def media_stats_month(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, int(time.time()) - 30 * 86400, include_passive, user)
+
+
+@app.get("/stats/media/{platform}/all", dependencies=[Depends(require_api_key)])
+def media_stats_all(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, 0, include_passive, user)
+
+
+@app.get("/stats/media/{platform}/daily", dependencies=[Depends(require_api_key)])
+def media_stats_daily(platform: str, days: int = 30, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    since = int(time.time()) - days * 86400
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? {user_sql}
+            GROUP BY day ORDER BY day ASC
+        """, (platform, since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "days": [{"day": r["day"], "seconds": _seconds_from_count(r["n"])} for r in rows],
+    }
+
+
+@app.get("/stats/media/{platform}/videos", dependencies=[Depends(require_api_key)])
+def media_stats_videos(platform: str, window: str = "today", user: Optional[str] = None):
+    _validate_media_platform(platform)
+    since = _window_since(window)
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT title, COUNT(*) AS n
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? AND title IS NOT NULL {user_sql}
+            GROUP BY title ORDER BY n DESC LIMIT 10
+        """, (platform, since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "videos": [{"title": r["title"], "seconds": _seconds_from_count(r["n"])} for r in rows],
+    }
+
+
+@app.get("/stats/media/{platform}/now", dependencies=[Depends(require_api_key)])
+def media_stats_now(platform: str, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    cutoff = int(time.time()) - 120
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        row = conn.execute(f"""
+            SELECT channel, title, media_user
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? AND state = 'active' {user_sql}
+            ORDER BY ts DESC LIMIT 1
+        """, (platform, cutoff, *user_params)).fetchone()
+    if not row:
+        return {"channel": None}
+    return {"channel": row["channel"], "title": row["title"], "media_user": row["media_user"]}
+
+
 def _seconds_from_count(n: int) -> int:
     return n * HEARTBEAT_INTERVAL
 
@@ -539,6 +810,84 @@ def delete_channel_link(link_id: int):
         cur = conn.execute("DELETE FROM channel_links WHERE id = ?", (link_id,))
     if cur.rowcount == 0:
         raise HTTPException(status_code=404, detail="link not found")
+    return {"ok": True}
+
+
+# ---------- Creator links (cross-platform author matching) ----------
+
+@app.get("/settings/creator-links", dependencies=[Depends(require_api_key)])
+def get_creator_links():
+    """All creator groups with their per-platform channel aliases."""
+    with db() as conn:
+        groups = conn.execute(
+            "SELECT id, label FROM creator_groups ORDER BY label"
+        ).fetchall()
+        aliases = conn.execute(
+            "SELECT id, group_id, platform, channel FROM creator_aliases ORDER BY platform, channel"
+        ).fetchall()
+    by_group = {}
+    for a in aliases:
+        by_group.setdefault(a["group_id"], []).append(
+            {"id": a["id"], "platform": a["platform"], "channel": a["channel"]}
+        )
+    return {
+        "groups": [
+            {"id": g["id"], "label": g["label"], "members": by_group.get(g["id"], [])}
+            for g in groups
+        ]
+    }
+
+
+@app.post("/settings/creator-links", dependencies=[Depends(require_api_key)])
+def add_creator_alias(alias: CreatorAlias):
+    """Add a platform channel to a creator group (creating the group by label
+    if needed). A channel can belong to only one creator."""
+    channel = alias.channel.lower()
+    with db() as conn:
+        grp = conn.execute(
+            "SELECT id FROM creator_groups WHERE label = ?", (alias.label,)
+        ).fetchone()
+        group_id = grp["id"] if grp else _create_creator_group(conn, alias.label)
+        try:
+            cur = conn.execute(
+                "INSERT INTO creator_aliases (group_id, platform, channel) VALUES (?, ?, ?)",
+                (group_id, alias.platform, channel),
+            )
+            alias_id = cur.lastrowid
+        except sqlite3.IntegrityError:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{alias.platform}:{channel} is already linked to a creator",
+            )
+    return {"ok": True, "group_id": group_id, "alias_id": alias_id}
+
+
+@app.delete("/settings/creator-links/alias/{alias_id}", dependencies=[Depends(require_api_key)])
+def delete_creator_alias(alias_id: int):
+    """Remove a single channel alias. Removes the group too if it becomes empty."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT group_id FROM creator_aliases WHERE id = ?", (alias_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="alias not found")
+        group_id = row["group_id"]
+        conn.execute("DELETE FROM creator_aliases WHERE id = ?", (alias_id,))
+        remaining = conn.execute(
+            "SELECT COUNT(*) AS n FROM creator_aliases WHERE group_id = ?", (group_id,)
+        ).fetchone()["n"]
+        if remaining == 0:
+            conn.execute("DELETE FROM creator_groups WHERE id = ?", (group_id,))
+    return {"ok": True}
+
+
+@app.delete("/settings/creator-links/group/{group_id}", dependencies=[Depends(require_api_key)])
+def delete_creator_group(group_id: int):
+    with db() as conn:
+        cur = conn.execute("DELETE FROM creator_groups WHERE id = ?", (group_id,))
+        conn.execute("DELETE FROM creator_aliases WHERE group_id = ?", (group_id,))
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="creator not found")
     return {"ok": True}
 
 
@@ -873,6 +1222,90 @@ def stats_channel(channel: str, window: str = "today", user: Optional[str] = Non
         return {"channel": channel, "window": window, "seconds": _seconds_from_count(row["n"])}
 
 
+@app.get("/stats/merged/channels", dependencies=[Depends(require_api_key)])
+def merged_channels(window: str = "today", include_passive: bool = True, user: Optional[str] = None):
+    """Per-creator watch time rolled up across every platform.
+
+    Channels linked via creator-links collapse into one row; unlinked channels
+    are their own row. `user` is a user_accounts label that filters Twitch +
+    YouTube (media platforms have no viewer-account linking and are unfiltered).
+    """
+    since = _window_since(window)
+    with db() as conn:
+        tw_user, yt_user = _resolve_merged_user(conn, user)
+        counts = _platform_channel_seconds(conn, since, tw_user, yt_user, include_passive)
+        alias_rows = conn.execute(
+            "SELECT group_id, platform, channel FROM creator_aliases"
+        ).fetchall()
+        labels = {g["id"]: g["label"] for g in conn.execute("SELECT id, label FROM creator_groups")}
+
+    alias_to_group = {(a["platform"], a["channel"]): a["group_id"] for a in alias_rows}
+    groups = {}
+    for (platform, channel), n in counts.items():
+        seconds = _seconds_from_count(n)
+        gid = alias_to_group.get((platform, channel))
+        if gid is not None:
+            key = ("group", gid)
+            label = labels.get(gid, channel)
+        else:
+            key = ("single", platform, channel)
+            label = channel
+        row = groups.get(key)
+        if row is None:
+            row = {"label": label, "seconds": 0, "members": []}
+            groups[key] = row
+        row["seconds"] += seconds
+        row["members"].append({"platform": platform, "channel": channel, "seconds": seconds})
+
+    rows = list(groups.values())
+    for row in rows:
+        row["members"].sort(key=lambda m: m["seconds"], reverse=True)
+        row["platforms"] = sorted({m["platform"] for m in row["members"]})
+        primary = row["members"][0]
+        row["primary"] = {"platform": primary["platform"], "channel": primary["channel"]}
+    rows.sort(key=lambda r: r["seconds"], reverse=True)
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "total_seconds": sum(r["seconds"] for r in rows),
+        "rows": rows,
+    }
+
+
+@app.get("/stats/merged/daily", dependencies=[Depends(require_api_key)])
+def merged_daily(days: int = 30, include_passive: bool = True, user: Optional[str] = None):
+    """Combined watch time per day across every platform."""
+    since = int(time.time()) - days * 86400
+    state_filter = "" if include_passive else "AND state = 'active'"
+    day_map = {}
+    with db() as conn:
+        tw_user, yt_user = _resolve_merged_user(conn, user)
+        tw_sql, tw_params = _user_clause(tw_user)
+        for r in conn.execute(f"""
+            SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+            FROM heartbeats WHERE ts >= ? {state_filter} {tw_sql} GROUP BY day
+        """, (since, *tw_params)):
+            day_map[r["day"]] = day_map.get(r["day"], 0) + r["n"]
+        yt_sql, yt_params = _yt_user_clause(yt_user)
+        for r in conn.execute(f"""
+            SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+            FROM youtube_heartbeats WHERE ts >= ? {state_filter} {yt_sql} GROUP BY day
+        """, (since, *yt_params)):
+            day_map[r["day"]] = day_map.get(r["day"], 0) + r["n"]
+        for p in sorted(MEDIA_PLATFORMS):
+            for r in conn.execute(f"""
+                SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+                FROM media_heartbeats WHERE platform = ? AND ts >= ? {state_filter} GROUP BY day
+            """, (p, since)):
+                day_map[r["day"]] = day_map.get(r["day"], 0) + r["n"]
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "days": [
+            {"day": d, "seconds": _seconds_from_count(day_map[d])}
+            for d in sorted(day_map)
+        ],
+    }
+
+
 @app.get("/stats/users", dependencies=[Depends(require_api_key)])
 def stats_users():
     """Distinct twitch_user values with last activity and heartbeat count.
@@ -1014,6 +1447,61 @@ def _yt_user_clause(user: Optional[str]):
     return "AND youtube_user = ?", (user,)
 
 
+def _platform_channel_seconds(conn, since, tw_user, yt_user, include_passive=True):
+    """Return {(platform, channel): heartbeat_count} across every platform for
+    ts >= since. Twitch/YouTube honour their viewer-account filters; media
+    platforms are unfiltered (no viewer-account linking)."""
+    state_filter = "" if include_passive else "AND state = 'active'"
+    counts = {}
+    tw_sql, tw_params = _user_clause(tw_user)
+    for r in conn.execute(f"""
+        SELECT channel, COUNT(*) AS n FROM heartbeats
+        WHERE ts >= ? {state_filter} {tw_sql} GROUP BY channel
+    """, (since, *tw_params)):
+        counts[("twitch", r["channel"])] = r["n"]
+    yt_sql, yt_params = _yt_user_clause(yt_user)
+    for r in conn.execute(f"""
+        SELECT channel, COUNT(*) AS n FROM youtube_heartbeats
+        WHERE ts >= ? {state_filter} {yt_sql} GROUP BY channel
+    """, (since, *yt_params)):
+        counts[("youtube", r["channel"])] = r["n"]
+    for p in sorted(MEDIA_PLATFORMS):
+        for r in conn.execute(f"""
+            SELECT channel, COUNT(*) AS n FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? {state_filter} GROUP BY channel
+        """, (p, since)):
+            counts[(p, r["channel"])] = r["n"]
+    return counts
+
+
+def _media_user_clause(user: Optional[str]):
+    if user is None:
+        return "", ()
+    if user == "anonymous":
+        return "AND media_user IS NULL", ()
+    return "AND media_user = ?", (user,)
+
+
+def _media_stats_since(platform: str, since: int, include_passive: bool, user: Optional[str] = None):
+    state_filter = "" if include_passive else "AND state = 'active'"
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT channel, COUNT(*) AS n
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? {state_filter} {user_sql}
+            GROUP BY channel
+            ORDER BY n DESC
+        """, (platform, since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "channels": [
+            {"channel": r["channel"], "seconds": _seconds_from_count(r["n"])}
+            for r in rows
+        ],
+    }
+
+
 def _resolve_merged_user(conn, label: Optional[str]):
     """Look up a user_accounts label and return (twitch_user, youtube_user).
 
@@ -1062,7 +1550,13 @@ EXPORT_TABLES = {
         "id", "ts", "channel", "title", "video_id", "playlist_id",
         "state", "tab_visible", "youtube_user", "client_id",
     ],
+    "media_heartbeats": [
+        "id", "ts", "platform", "channel", "title", "video_id",
+        "state", "tab_visible", "media_user", "client_id",
+    ],
     "channel_links": ["id", "twitch_channel", "youtube_channel"],
+    "creator_groups": ["id", "label"],
+    "creator_aliases": ["id", "group_id", "platform", "channel"],
     "user_accounts": ["id", "label", "twitch_user", "youtube_user"],
 }
 
@@ -1143,6 +1637,17 @@ async def import_data(file: UploadFile = File(...), mode: str = "merge"):
             counts[table] = inserted
 
     return {"status": "ok", "mode": mode, "imported": counts}
+
+
+# ---------- Plex poller ----------
+
+import plex_poller
+
+
+@app.on_event("startup")
+def _start_plex_poller():
+    if plex_poller.start(DB_PATH, HEARTBEAT_INTERVAL):
+        print("[watchtime] Plex poller started")
 
 
 # ---------- Google Drive backup ----------
