@@ -28,6 +28,11 @@ API_KEY = os.environ["API_KEY"]
 DB_PATH = os.environ.get("DB_PATH", "/data/watchtime.db")
 HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "60"))
 
+# Additional "generic" video sources stored in one table with a platform
+# discriminator. X/Twitter, Facebook and Instagram are tracked by the browser
+# extension; Plex is tracked server-side by polling a Plex Media Server.
+MEDIA_PLATFORMS = {"x", "facebook", "instagram", "plex"}
+
 app = FastAPI(title="Twitch Watch Time API", version="0.1.0")
 
 # Allow extension origins. Manifest V3 extensions send Origin like
@@ -82,6 +87,26 @@ def youtube_page():
     return _serve_html(STATIC_DIR / "youtube.html")
 
 
+@app.get("/x", include_in_schema=False)
+def x_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
+@app.get("/facebook", include_in_schema=False)
+def facebook_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
+@app.get("/instagram", include_in_schema=False)
+def instagram_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
+@app.get("/plex", include_in_schema=False)
+def plex_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page():
     return _serve_html(STATIC_DIR / "settings.html")
@@ -129,6 +154,22 @@ def init_db():
                 ON youtube_heartbeats(ts);
             CREATE INDEX IF NOT EXISTS idx_yt_channel_ts
                 ON youtube_heartbeats(channel, ts);
+            CREATE TABLE IF NOT EXISTS media_heartbeats (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts          INTEGER NOT NULL,
+                platform    TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex')),
+                channel     TEXT    NOT NULL,
+                title       TEXT,
+                video_id    TEXT,
+                state       TEXT    NOT NULL CHECK(state IN ('active','passive')),
+                tab_visible INTEGER NOT NULL CHECK(tab_visible IN (0,1)),
+                media_user  TEXT,
+                client_id   TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_media_platform_ts
+                ON media_heartbeats(platform, ts);
+            CREATE INDEX IF NOT EXISTS idx_media_platform_channel_ts
+                ON media_heartbeats(platform, channel, ts);
             CREATE TABLE IF NOT EXISTS channel_links (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 twitch_channel  TEXT NOT NULL,
@@ -201,6 +242,22 @@ class YoutubeHeartbeatBatch(BaseModel):
     heartbeats: list[YoutubeHeartbeat]
 
 
+class MediaHeartbeat(BaseModel):
+    ts: int = Field(..., description="Unix seconds, UTC")
+    platform: str = Field(..., pattern="^(x|facebook|instagram|plex)$")
+    channel: str = Field(..., min_length=1, max_length=128)
+    title: Optional[str] = Field(default=None, max_length=512)
+    video_id: Optional[str] = Field(default=None, max_length=128)
+    state: str = Field(..., pattern="^(active|passive)$")
+    tab_visible: bool
+    client_id: str = Field(..., min_length=1, max_length=64)
+    media_user: Optional[str] = Field(default=None, max_length=128)
+
+
+class MediaHeartbeatBatch(BaseModel):
+    heartbeats: list[MediaHeartbeat]
+
+
 class ChannelLink(BaseModel):
     twitch_channel: str = Field(..., min_length=1, max_length=64)
     youtube_channel: str = Field(..., min_length=1, max_length=128)
@@ -257,9 +314,21 @@ def list_custom_avatars():
     return {"avatars": [{"platform": k.split(":")[0], "channel": k.split(":")[1]} for k in index]}
 
 
+# unavatar.io provider names keyed by our internal platform name. Plex has no
+# avatar provider, so it falls through to the initials placeholder in the UI.
+_AVATAR_PROVIDERS = {
+    "twitch": "twitch",
+    "youtube": "youtube",
+    "x": "twitter",
+    "facebook": "facebook",
+    "instagram": "instagram",
+}
+
+
 @app.get("/avatars/{platform}/{channel}")
 def get_avatar(platform: str, channel: str):
-    if platform not in ("twitch", "youtube"):
+    provider = _AVATAR_PROVIDERS.get(platform)
+    if provider is None:
         raise HTTPException(status_code=404)
     _AVATAR_DIR.mkdir(exist_ok=True)
     safe = _avatar_safe(channel)
@@ -274,7 +343,7 @@ def get_avatar(platform: str, channel: str):
         data = cache_file.read_bytes()
         return Response(content=data, media_type=_detect_ct(data), headers={"Cache-Control": "public, max-age=604800"})
     try:
-        url = f"https://unavatar.io/{platform}/{urllib.parse.quote(channel)}?fallback=404"
+        url = f"https://unavatar.io/{provider}/{urllib.parse.quote(channel)}?fallback=404"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
             data = resp.read()
@@ -286,7 +355,7 @@ def get_avatar(platform: str, channel: str):
 
 @app.post("/avatars/{platform}/{channel}", dependencies=[Depends(require_api_key)])
 async def set_custom_avatar(platform: str, channel: str, file: UploadFile = File(...)):
-    if platform not in ("twitch", "youtube"):
+    if platform not in _AVATAR_PROVIDERS and platform not in MEDIA_PLATFORMS:
         raise HTTPException(status_code=404)
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
@@ -365,6 +434,27 @@ def youtube_heartbeats_batch(batch: YoutubeHeartbeatBatch):
     return {"ok": True, "stored": len(rows)}
 
 
+@app.post("/media/heartbeats", dependencies=[Depends(require_api_key)])
+def media_heartbeats_batch(batch: MediaHeartbeatBatch):
+    """Ingest heartbeats for the generic video sources (x, facebook, instagram,
+    plex). Each heartbeat carries its own `platform` so a single extension queue
+    can serve all browser-tracked sources."""
+    rows = [
+        (hb.ts, hb.platform, hb.channel.lower(), hb.title, hb.video_id,
+         hb.state, int(hb.tab_visible),
+         hb.media_user.lower() if hb.media_user else None, hb.client_id)
+        for hb in batch.heartbeats
+    ]
+    with db() as conn:
+        conn.executemany(
+            "INSERT INTO media_heartbeats "
+            "(ts, platform, channel, title, video_id, state, tab_visible, media_user, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+    return {"ok": True, "stored": len(rows)}
+
+
 @app.get("/stats/channels", dependencies=[Depends(require_api_key)])
 def all_channels():
     with db() as conn:
@@ -374,7 +464,13 @@ def all_channels():
         yt = [r["channel"] for r in conn.execute(
             "SELECT DISTINCT channel FROM youtube_heartbeats ORDER BY channel"
         ).fetchall()]
-    return {"twitch": tw, "youtube": yt}
+        media = {}
+        for p in sorted(MEDIA_PLATFORMS):
+            media[p] = [r["channel"] for r in conn.execute(
+                "SELECT DISTINCT channel FROM media_heartbeats WHERE platform = ? ORDER BY channel",
+                (p,),
+            ).fetchall()]
+    return {"twitch": tw, "youtube": yt, **media}
 
 
 @app.get("/stats/youtube/users", dependencies=[Depends(require_api_key)])
@@ -493,6 +589,107 @@ def yt_stats_videos(window: str = "today", user: Optional[str] = None):
         "interval_seconds": HEARTBEAT_INTERVAL,
         "videos": [{"title": r["title"], "seconds": _seconds_from_count(r["n"])} for r in rows],
     }
+
+
+def _validate_media_platform(platform: str):
+    if platform not in MEDIA_PLATFORMS:
+        raise HTTPException(status_code=404, detail=f"unknown platform '{platform}'")
+
+
+@app.get("/stats/media/{platform}/users", dependencies=[Depends(require_api_key)])
+def media_stats_users(platform: str):
+    _validate_media_platform(platform)
+    with db() as conn:
+        rows = conn.execute("""
+            SELECT media_user AS user, MAX(ts) AS last_ts, COUNT(*) AS count
+            FROM media_heartbeats
+            WHERE platform = ? AND media_user IS NOT NULL
+            GROUP BY media_user
+            ORDER BY last_ts DESC
+        """, (platform,)).fetchall()
+    return {
+        "users": [
+            {"user": r["user"], "last_ts": r["last_ts"], "count": r["count"]}
+            for r in rows
+        ]
+    }
+
+
+@app.get("/stats/media/{platform}/today", dependencies=[Depends(require_api_key)])
+def media_stats_today(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, _local_midnight(), include_passive, user)
+
+
+@app.get("/stats/media/{platform}/week", dependencies=[Depends(require_api_key)])
+def media_stats_week(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, int(time.time()) - 7 * 86400, include_passive, user)
+
+
+@app.get("/stats/media/{platform}/month", dependencies=[Depends(require_api_key)])
+def media_stats_month(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, int(time.time()) - 30 * 86400, include_passive, user)
+
+
+@app.get("/stats/media/{platform}/all", dependencies=[Depends(require_api_key)])
+def media_stats_all(platform: str, include_passive: bool = True, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    return _media_stats_since(platform, 0, include_passive, user)
+
+
+@app.get("/stats/media/{platform}/daily", dependencies=[Depends(require_api_key)])
+def media_stats_daily(platform: str, days: int = 30, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    since = int(time.time()) - days * 86400
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? {user_sql}
+            GROUP BY day ORDER BY day ASC
+        """, (platform, since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "days": [{"day": r["day"], "seconds": _seconds_from_count(r["n"])} for r in rows],
+    }
+
+
+@app.get("/stats/media/{platform}/videos", dependencies=[Depends(require_api_key)])
+def media_stats_videos(platform: str, window: str = "today", user: Optional[str] = None):
+    _validate_media_platform(platform)
+    since = _window_since(window)
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT title, COUNT(*) AS n
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? AND title IS NOT NULL {user_sql}
+            GROUP BY title ORDER BY n DESC LIMIT 10
+        """, (platform, since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "videos": [{"title": r["title"], "seconds": _seconds_from_count(r["n"])} for r in rows],
+    }
+
+
+@app.get("/stats/media/{platform}/now", dependencies=[Depends(require_api_key)])
+def media_stats_now(platform: str, user: Optional[str] = None):
+    _validate_media_platform(platform)
+    cutoff = int(time.time()) - 120
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        row = conn.execute(f"""
+            SELECT channel, title, media_user
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? AND state = 'active' {user_sql}
+            ORDER BY ts DESC LIMIT 1
+        """, (platform, cutoff, *user_params)).fetchone()
+    if not row:
+        return {"channel": None}
+    return {"channel": row["channel"], "title": row["title"], "media_user": row["media_user"]}
 
 
 def _seconds_from_count(n: int) -> int:
@@ -1014,6 +1211,34 @@ def _yt_user_clause(user: Optional[str]):
     return "AND youtube_user = ?", (user,)
 
 
+def _media_user_clause(user: Optional[str]):
+    if user is None:
+        return "", ()
+    if user == "anonymous":
+        return "AND media_user IS NULL", ()
+    return "AND media_user = ?", (user,)
+
+
+def _media_stats_since(platform: str, since: int, include_passive: bool, user: Optional[str] = None):
+    state_filter = "" if include_passive else "AND state = 'active'"
+    user_sql, user_params = _media_user_clause(user)
+    with db() as conn:
+        rows = conn.execute(f"""
+            SELECT channel, COUNT(*) AS n
+            FROM media_heartbeats
+            WHERE platform = ? AND ts >= ? {state_filter} {user_sql}
+            GROUP BY channel
+            ORDER BY n DESC
+        """, (platform, since, *user_params)).fetchall()
+    return {
+        "interval_seconds": HEARTBEAT_INTERVAL,
+        "channels": [
+            {"channel": r["channel"], "seconds": _seconds_from_count(r["n"])}
+            for r in rows
+        ],
+    }
+
+
 def _resolve_merged_user(conn, label: Optional[str]):
     """Look up a user_accounts label and return (twitch_user, youtube_user).
 
@@ -1061,6 +1286,10 @@ EXPORT_TABLES = {
     "youtube_heartbeats": [
         "id", "ts", "channel", "title", "video_id", "playlist_id",
         "state", "tab_visible", "youtube_user", "client_id",
+    ],
+    "media_heartbeats": [
+        "id", "ts", "platform", "channel", "title", "video_id",
+        "state", "tab_visible", "media_user", "client_id",
     ],
     "channel_links": ["id", "twitch_channel", "youtube_channel"],
     "user_accounts": ["id", "label", "twitch_user", "youtube_user"],
@@ -1143,6 +1372,17 @@ async def import_data(file: UploadFile = File(...), mode: str = "merge"):
             counts[table] = inserted
 
     return {"status": "ok", "mode": mode, "imported": counts}
+
+
+# ---------- Plex poller ----------
+
+import plex_poller
+
+
+@app.on_event("startup")
+def _start_plex_poller():
+    if plex_poller.start(DB_PATH, HEARTBEAT_INTERVAL):
+        print("[watchtime] Plex poller started")
 
 
 # ---------- Google Drive backup ----------

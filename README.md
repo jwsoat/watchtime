@@ -1,15 +1,18 @@
 # Watchtime Tracker
 
-Personal watch time logger for **Twitch** and **YouTube**. A browser extension
-sends heartbeats to a self-hosted API, which stores them in SQLite and serves a
-multi-platform dashboard.
+Personal watch time logger for **Twitch**, **YouTube**, **X (Twitter)**,
+**Facebook**, **Instagram** and **Plex**. A browser extension sends heartbeats
+to a self-hosted API, which stores them in SQLite and serves a multi-platform
+dashboard. Plex is tracked server-side by polling a Plex Media Server, so it
+captures playback on every device, not just the browser.
 
 Live at **stats.jwsoat.co.nz**.
 
 ## How it works
 
-The extension runs a heartbeat timer on twitch.tv and youtube.com pages. Every
-tick (10s Twitch, 60s YouTube), if a video is playing, it records:
+The extension runs a heartbeat timer on twitch.tv, youtube.com, x.com,
+facebook.com and instagram.com pages. Every tick (~10s), if a video is playing,
+it records:
 
 - channel name
 - timestamp (Unix seconds UTC)
@@ -33,6 +36,7 @@ Four views behind an API key gate:
 | `/` | **Merged** — combined Twitch + YouTube rankings, daily chart, quick stats |
 | `/twitch` | Twitch-only — channels, categories, daily chart |
 | `/youtube` | YouTube-only — channels, videos, daily chart |
+| `/x` `/facebook` `/instagram` `/plex` | Per-source — top accounts, top videos, daily chart |
 | `/tv` | Ambient scoreboard with rotating panels (point a spare display here) |
 | `/settings` | Accounts, channel links, avatars, data management, Google Drive backup |
 
@@ -89,6 +93,7 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | POST | `/heartbeat` | Single Twitch heartbeat |
 | POST | `/heartbeats` | Batched Twitch heartbeats |
 | POST | `/youtube/heartbeats` | Batched YouTube heartbeats |
+| POST | `/media/heartbeats` | Batched heartbeats for x / facebook / instagram / plex (each carries its own `platform`) |
 
 ### Twitch stats
 
@@ -122,8 +127,28 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | GET | `/stats/youtube/playlists` | Playlist stats |
 | GET | `/stats/youtube/users` | Known YouTube users |
 
+### Other sources (X, Facebook, Instagram, Plex)
+
+`{platform}` is one of `x`, `facebook`, `instagram`, `plex`.
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/stats/media/{platform}/today` | Per-account seconds since midnight |
+| GET | `/stats/media/{platform}/week` | Last 7 days |
+| GET | `/stats/media/{platform}/month` | Last 30 days |
+| GET | `/stats/media/{platform}/all` | All time |
+| GET | `/stats/media/{platform}/daily?days=30` | Seconds per day |
+| GET | `/stats/media/{platform}/videos` | Video/post rankings |
+| GET | `/stats/media/{platform}/now` | Currently watching |
+| GET | `/stats/media/{platform}/users` | Known accounts |
+
 Add `?include_passive=false` to exclude idle time. Add `?user=<handle>` to
 filter by account. Add `?platform=twitch|youtube` on shared endpoints.
+
+> **Note on attribution:** X, Facebook and Instagram are tracked by scraping the
+> page DOM, which these sites obfuscate and change frequently. Playback *time* is
+> reliable; the detected account/title is best-effort and may occasionally be
+> missing. Expect to refresh the content-script selectors over time.
 
 ### Settings
 
@@ -191,4 +216,14 @@ docker exec twitch-watch-api sh -c \
 | `HEARTBEAT_INTERVAL_SECONDS` | No | `10` | Heartbeat-to-seconds multiplier |
 | `GDRIVE_CLIENT_ID` | No | — | Google OAuth client ID (for Drive backup) |
 | `GDRIVE_CLIENT_SECRET` | No | — | Google OAuth client secret |
+| `PLEX_BASE_URL` | No | — | Plex Media Server URL, e.g. `http://192.168.1.10:32400` (enables Plex poller) |
+| `PLEX_TOKEN` | No | — | Plex auth token ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) |
 | `TZ` | No | `UTC` | Timezone for "today" calculations |
+
+### Plex tracking
+
+Set `PLEX_BASE_URL` and `PLEX_TOKEN` to enable the server-side Plex poller. On
+startup the API polls `{PLEX_BASE_URL}/status/sessions` every
+`HEARTBEAT_INTERVAL_SECONDS` and records one heartbeat per actively-playing
+video session (movies, episodes, clips — music is skipped). This captures
+playback from any Plex client (TV, phone, native apps), not just the browser.

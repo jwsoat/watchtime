@@ -259,6 +259,13 @@ body.yt-page .ranked-row .bar > span { background: var(--yt-red); }
 body.yt-page .pill.active { background: var(--yt-red); border-color: var(--yt-red); }
 body.yt-page .pill:hover { border-color: var(--yt-red); }
 
+/* Generic media page overrides (x / facebook / instagram / plex).
+   --media-accent and --media-grad are set per-platform by media.js. */
+.hero.media { background: var(--media-grad, var(--hero-grad)); }
+body.media-page .ranked-row .bar > span { background: var(--media-accent, var(--purple)); }
+body.media-page .pill.active { background: var(--media-accent, var(--purple)); border-color: var(--media-accent, var(--purple)); }
+body.media-page .pill:hover { border-color: var(--media-accent, var(--purple)); }
+
 /* Platform badges */
 .platform-badge { font-size: 10px; padding: 2px 6px; border-radius: 10px; font-weight: 600; vertical-align: middle; }
 .platform-badge.twitch { background: rgba(145,70,255,0.15); color: #9146FF; }

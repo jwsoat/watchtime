@@ -65,6 +65,7 @@ async function flushQueue(queueKey, endpoint) {
 async function flush() {
   await flushQueue(QUEUE_KEY, "/heartbeats");
   await flushQueue("yt_queue", "/youtube/heartbeats");
+  await flushQueue("media_queue", "/media/heartbeats");
 }
 
 async function enqueueYoutube(hb) {
@@ -76,12 +77,30 @@ async function enqueueYoutube(hb) {
   await chrome.storage.local.set({ yt_queue: queue });
 }
 
+// Generic queue for the additional video sources (x, facebook, instagram).
+// Each heartbeat keeps its own `platform` field so the backend can route it.
+async function enqueueMedia(hb) {
+  const clientId = await ensureClientId();
+  hb.client_id = clientId;
+  const { media_queue: queue = [] } = await chrome.storage.local.get("media_queue");
+  queue.push(hb);
+  if (queue.length > MAX_QUEUE) queue.splice(0, queue.length - MAX_QUEUE);
+  await chrome.storage.local.set({ media_queue: queue });
+}
+
+const MEDIA_PLATFORMS = new Set(["x", "facebook", "instagram"]);
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "heartbeat") {
-    const { platform, ...hb } = msg.payload;
+    const { platform } = msg.payload;
     if (platform === "youtube") {
+      const { platform: _p, ...hb } = msg.payload;
       enqueueYoutube(hb).then(() => sendResponse({ ok: true }));
+    } else if (MEDIA_PLATFORMS.has(platform)) {
+      // Keep `platform` in the payload — the /media endpoint needs it.
+      enqueueMedia({ ...msg.payload }).then(() => sendResponse({ ok: true }));
     } else {
+      const { platform: _p, ...hb } = msg.payload;
       enqueue(hb).then(() => sendResponse({ ok: true }));
     }
     return true;

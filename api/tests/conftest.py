@@ -50,12 +50,26 @@ def _clean_youtube_data(app):
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute("DELETE FROM youtube_heartbeats")
+        conn.execute("DELETE FROM media_heartbeats")
         conn.execute("DELETE FROM channel_links")
         conn.execute("DELETE FROM user_accounts")
         conn.commit()
     finally:
         conn.close()
     yield
+
+
+def insert_media_heartbeat(
+    db_conn, ts, platform, channel, media_user=None, title=None,
+    video_id=None, state="active", tab_visible=1, client_id="test-client",
+):
+    """Insert a media_heartbeat row directly. Caller must commit."""
+    db_conn.execute(
+        "INSERT INTO media_heartbeats "
+        "(ts, platform, channel, title, video_id, state, tab_visible, media_user, client_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (ts, platform, channel.lower(), title, video_id, state, tab_visible, media_user, client_id),
+    )
 
 
 def insert_youtube_heartbeat(
