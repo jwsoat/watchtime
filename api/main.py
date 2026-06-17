@@ -267,10 +267,10 @@ def init_db():
                 id                   INTEGER PRIMARY KEY CHECK (id = 1),
                 base_url             TEXT,
                 token                TEXT,
-                channel_from_studio  INTEGER NOT NULL DEFAULT 0
+                channel_from_studio  INTEGER NOT NULL DEFAULT 1
             );
             INSERT OR IGNORE INTO plex_config (id, base_url, token, channel_from_studio)
-                VALUES (1, NULL, NULL, 0);
+                VALUES (1, NULL, NULL, 1);
             CREATE TABLE IF NOT EXISTS user_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 label           TEXT NOT NULL,
