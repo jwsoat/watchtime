@@ -68,10 +68,11 @@ _STUDIO_CACHE = {}
 
 def _fetch_studio(base_url: str, token: str, rating_key: str):
     """Return the `studio` field for a /library/metadata/<rating_key> item.
-    Used to look up a TV show's studio when an episode session itself has no
-    studio set (episodes inherit show-level metadata only via this endpoint)."""
-    if rating_key in _STUDIO_CACHE:
-        return _STUDIO_CACHE[rating_key]
+    Cache hits only when a studio is actually found — so a user who later
+    fills in the studio in Plex picks up on the next poll without a restart."""
+    cached = _STUDIO_CACHE.get(rating_key)
+    if cached:
+        return cached
     url = f"{base_url.rstrip('/')}/library/metadata/{rating_key}"
     headers = {**_PLEX_HEADERS_BASE, "X-Plex-Token": token}
     studio = None
@@ -84,7 +85,8 @@ def _fetch_studio(base_url: str, token: str, rating_key: str):
             studio = metas[0].get("studio") or None
     except Exception:
         pass
-    _STUDIO_CACHE[rating_key] = studio
+    if studio:
+        _STUDIO_CACHE[rating_key] = studio
     return studio
 
 
