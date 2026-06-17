@@ -142,6 +142,124 @@ def migrate_db(conn):
                 (env_url, env_token, studio),
             )
     _migrate_channel_links_to_creators(conn)
+    _seed_default_creators(conn)
+
+
+DEFAULT_CREATOR_GROUPS = [
+    ("alveussanctuary", [
+        ("twitch", "alveussanctuary"),
+        ("youtube", "alveussanctuary"),
+        ("instagram", "alveussanctuary"),
+    ]),
+    ("arky", [
+        ("twitch", "arky"),
+        ("twitch", "arky_offline"),
+        ("youtube", "arkysznlive"),
+        ("youtube", "arkyszntoo"),
+        ("youtube", "arkymoreclips"),
+    ]),
+    ("bonnie", [
+        ("twitch", "bonnie"),
+        ("twitch", "bonniealt"),
+        ("twitch", "bonnieoffline"),
+        ("youtube", "bonnieclips"),
+        ("instagram", "bonnierabbit"),
+        ("plex", "bonnie"),
+    ]),
+    ("cinna", [
+        ("twitch", "cinna"),
+        ("youtube", "cinnabrit"),
+        ("youtube", "cinnaliive"),
+        ("youtube", "cinnavodsunmuted"),
+        ("x", "cinnabrit"),
+        ("instagram", "cinnabrit"),
+        ("plex", "cinna"),
+    ]),
+    ("darkviperau", [
+        ("twitch", "darkviperau"),
+        ("youtube", "darkviperau"),
+    ]),
+    ("deansocool", [
+        ("twitch", "deansocool"),
+        ("youtube", "deansocool"),
+    ]),
+    ("emiru", [
+        ("twitch", "emiru"),
+        ("youtube", "emiru"),
+        ("youtube", "emiruvods"),
+    ]),
+    ("extraemily", [
+        ("twitch", "extraemily"),
+        ("youtube", "extraemily"),
+    ]),
+    ("jasontheween", [
+        ("twitch", "jasontheween"),
+        ("youtube", "jasontheweenie"),
+        ("youtube", "jasontheweenirl"),
+        ("youtube", "jasontheweenciips"),
+        ("youtube", "jasontheweenvod"),
+    ]),
+    ("matarmstrong", [
+        ("youtube", "matarmstrongbmx"),
+        ("youtube", "matarmstrongmk2"),
+    ]),
+    ("maya", [
+        ("twitch", "maya"),
+        ("youtube", "mayahiga"),
+        ("youtube", "mayadaily"),
+    ]),
+    ("misterarther", [
+        ("twitch", "misterarther"),
+        ("twitch", "misterarther247"),
+        ("youtube", "mister_arther"),
+    ]),
+    ("nmplol", [
+        ("twitch", "nmplol"),
+        ("youtube", "nmplol"),
+        ("instagram", "nmplol"),
+    ]),
+    ("noraexplorer", [
+        ("twitch", "noraexplorer"),
+        ("youtube", "noraexplorerclips"),
+    ]),
+    ("rosiiwun", [
+        ("twitch", "rosiiwun"),
+        ("youtube", "rosiirofl"),
+    ]),
+    ("salmmus", [
+        ("twitch", "salmmus"),
+        ("youtube", "salmmusclips"),
+    ]),
+    ("santipulgaz", [
+        ("twitch", "santipulgaz"),
+        ("youtube", "santipulgaz"),
+        ("youtube", "santipulgazlive"),
+    ]),
+    ("stableronaldo", [
+        ("twitch", "stableronaldo"),
+        ("youtube", "stableronaldolive"),
+    ]),
+    ("yugi2x", [
+        ("twitch", "yugi2x"),
+        ("youtube", "yugi2xlive"),
+    ]),
+]
+
+
+def _seed_default_creators(conn):
+    """Seed baked-in creator groups on every boot. Idempotent: reuses groups
+    by label, skips aliases already linked to any creator."""
+    for label, aliases in DEFAULT_CREATOR_GROUPS:
+        row = conn.execute(
+            "SELECT id FROM creator_groups WHERE label = ?", (label,)
+        ).fetchone()
+        group_id = row[0] if row else _create_creator_group(conn, label)
+        for platform, channel in aliases:
+            conn.execute(
+                "INSERT OR IGNORE INTO creator_aliases (group_id, platform, channel) "
+                "VALUES (?, ?, ?)",
+                (group_id, platform, channel.lower()),
+            )
 
 
 def _migrate_channel_links_to_creators(conn):
