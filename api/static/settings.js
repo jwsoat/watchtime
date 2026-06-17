@@ -89,21 +89,35 @@ async function loadCreators() {
   });
 }
 
+const ACCOUNT_FIELDS = [
+  { key: "twitch_user", badge: "TW" },
+  { key: "youtube_user", badge: "YT" },
+  { key: "x_user", badge: "X" },
+  { key: "facebook_user", badge: "FB" },
+  { key: "instagram_user", badge: "IG" },
+  { key: "plex_user", badge: "PLEX" },
+];
+
 async function loadAccounts() {
   const { accounts } = await apiReq("GET", "/settings/user-accounts");
   const tbody = $("accounts-tbody");
   if (!accounts.length) {
-    tbody.innerHTML = '<tr><td colspan="4" style="color:var(--muted); padding:12px 0">No accounts configured.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted); padding:12px 0">No accounts configured.</td></tr>';
     return;
   }
-  tbody.innerHTML = accounts.map(a => `
-    <tr>
-      <td>${escapeHtml(a.label)}</td>
-      <td>${a.twitch_user ? escapeHtml(a.twitch_user) : '<span style="color:var(--muted)">—</span>'}</td>
-      <td>${a.youtube_user ? escapeHtml(a.youtube_user) : '<span style="color:var(--muted)">—</span>'}</td>
-      <td><button class="del-acct-btn" data-id="${a.id}">Delete</button></td>
-    </tr>
-  `).join("");
+  tbody.innerHTML = accounts.map(a => {
+    const chips = ACCOUNT_FIELDS
+      .filter(f => a[f.key])
+      .map(f => `<span class="platform-badge" style="margin-right:6px">${f.badge}</span>${escapeHtml(a[f.key])}`)
+      .join("<br>");
+    return `
+      <tr>
+        <td>${escapeHtml(a.label)}</td>
+        <td>${chips || '<span style="color:var(--muted)">—</span>'}</td>
+        <td><button class="del-acct-btn" data-id="${a.id}">Delete</button></td>
+      </tr>
+    `;
+  }).join("");
   tbody.querySelectorAll(".del-acct-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
       await apiReq("DELETE", `/settings/user-accounts/${btn.dataset.id}`);
@@ -134,19 +148,85 @@ $("add-creator-form").addEventListener("submit", async (e) => {
   }
 });
 
+const BULK_SAMPLE = {
+  groups: [
+    {
+      label: "MrBeast",
+      aliases: [
+        { platform: "youtube", channel: "mrbeast" },
+        { platform: "x", channel: "mrbeast" },
+      ],
+    },
+    {
+      label: "Ludwig",
+      aliases: [
+        { platform: "twitch", channel: "ludwig" },
+        { platform: "youtube", channel: "ludwig" },
+      ],
+    },
+  ],
+};
+
+$("bulk-load-sample-btn").addEventListener("click", () => {
+  $("bulk-creators-json").value = JSON.stringify(BULK_SAMPLE, null, 2);
+});
+
+$("bulk-import-btn").addEventListener("click", async () => {
+  const status = $("bulk-import-status");
+  const raw = $("bulk-creators-json").value.trim();
+  if (!raw) {
+    status.textContent = "Paste JSON first.";
+    return;
+  }
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch (err) {
+    status.textContent = `Invalid JSON: ${err.message}`;
+    return;
+  }
+  if (!payload || !Array.isArray(payload.groups)) {
+    status.textContent = 'Expected { "groups": [...] }';
+    return;
+  }
+  status.textContent = "Importing…";
+  try {
+    const res = await apiReq("POST", "/settings/creator-links/bulk", payload);
+    status.textContent =
+      `Done. ${res.groups_created} new creator(s), ` +
+      `${res.aliases_added} channel(s) added, ${res.aliases_skipped} skipped.`;
+    loadCreators().catch(console.error);
+  } catch (err) {
+    status.textContent = `Failed: ${err.message}`;
+  }
+});
+
+const ACCOUNT_INPUTS = [
+  { input: "input-account-twitch", field: "twitch_user" },
+  { input: "input-account-youtube", field: "youtube_user" },
+  { input: "input-account-x", field: "x_user" },
+  { input: "input-account-facebook", field: "facebook_user" },
+  { input: "input-account-instagram", field: "instagram_user" },
+  { input: "input-account-plex", field: "plex_user" },
+];
+
 $("add-account-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const label = $("input-label").value.trim();
-  const twitch = $("input-account-twitch").value.trim().toLowerCase();
-  const youtube = $("input-account-youtube").value.trim().toLowerCase();
   if (!label) return;
-  if (!twitch && !youtube) {
-    alert("Provide at least a Twitch or YouTube handle.");
+  const body = { label };
+  let any = false;
+  for (const { input, field } of ACCOUNT_INPUTS) {
+    const v = $(input).value.trim().toLowerCase();
+    if (v) {
+      body[field] = v;
+      any = true;
+    }
+  }
+  if (!any) {
+    alert("Provide at least one platform handle.");
     return;
   }
-  const body = { label };
-  if (twitch) body.twitch_user = twitch;
-  if (youtube) body.youtube_user = youtube;
   try {
     await apiReq("POST", "/settings/user-accounts", body);
   } catch (err) {
@@ -154,8 +234,7 @@ $("add-account-form").addEventListener("submit", async (e) => {
     return;
   }
   $("input-label").value = "";
-  $("input-account-twitch").value = "";
-  $("input-account-youtube").value = "";
+  for (const { input } of ACCOUNT_INPUTS) $(input).value = "";
   loadAccounts().catch(console.error);
 });
 
@@ -349,8 +428,71 @@ $("gdrive-disconnect-btn").addEventListener("click", async () => {
   loadGdriveStatus();
 });
 
+async function loadPlexConfig() {
+  const cfg = await apiReq("GET", "/settings/plex");
+  $("plex-base-url").value = cfg.base_url || "";
+  $("plex-token").value = "";
+  $("plex-token").placeholder = cfg.has_token
+    ? "leave blank to keep saved token"
+    : "paste your X-Plex-Token";
+  $("plex-channel-from-studio").checked = !!cfg.channel_from_studio;
+  const status = $("plex-status");
+  if (cfg.configured) {
+    status.textContent = "Configured — polling active.";
+    status.style.color = "var(--ok, #6a9a78)";
+  } else {
+    status.textContent = "Not configured.";
+    status.style.color = "var(--muted)";
+  }
+}
+
+$("plex-save-btn").addEventListener("click", async () => {
+  const body = {
+    base_url: $("plex-base-url").value.trim(),
+    token: $("plex-token").value,
+    channel_from_studio: $("plex-channel-from-studio").checked,
+  };
+  const status = $("plex-status");
+  status.textContent = "Saving…";
+  status.style.color = "var(--muted)";
+  try {
+    await apiReq("PUT", "/settings/plex", body);
+    await loadPlexConfig();
+  } catch (err) {
+    status.textContent = `Save failed: ${err.message}`;
+    status.style.color = "var(--danger, #d07070)";
+  }
+});
+
+$("plex-test-btn").addEventListener("click", async () => {
+  const status = $("plex-status");
+  status.textContent = "Testing…";
+  status.style.color = "var(--muted)";
+  try {
+    const r = await apiReq("POST", "/settings/plex/test");
+    status.textContent = `OK — ${r.sessions} active session(s) right now.`;
+    status.style.color = "var(--ok, #6a9a78)";
+  } catch (err) {
+    status.textContent = `Test failed: ${err.message}`;
+    status.style.color = "var(--danger, #d07070)";
+  }
+});
+
+$("plex-clear-btn").addEventListener("click", async () => {
+  if (!confirm("Clear Plex server URL and token? Polling will stop.")) return;
+  await apiReq("DELETE", "/settings/plex");
+  await loadPlexConfig();
+});
+
 async function boot() {
-  await Promise.all([loadCreators(), loadAccounts(), loadCustomAvatars(), loadChannelSuggestions(), loadGdriveStatus()]);
+  await Promise.all([
+    loadCreators(),
+    loadAccounts(),
+    loadCustomAvatars(),
+    loadChannelSuggestions(),
+    loadGdriveStatus(),
+    loadPlexConfig(),
+  ]);
 }
 
 if (state.apiKey) {

@@ -162,7 +162,7 @@ async function updateHero() {
   $("today-value").textContent = fmtDuration(todaySecs);
 
   const top = todayData.channels[0];
-  $("top-channel").textContent = top ? top.channel : "—";
+  $("top-channel").textContent = top ? (top.display_name || top.channel) : "—";
   $("top-seconds").textContent = top ? fmtDuration(top.seconds) : "0 seconds";
 
   $("qs-total").textContent = fmtDuration(allData.channels.reduce((s, c) => s + c.seconds, 0));
@@ -173,7 +173,7 @@ async function updateHero() {
     $("live-label").textContent = nowData.media_user
       ? `${nowData.media_user}'s now watching`
       : "Now watching";
-    $("live-channel").textContent = nowData.channel;
+    $("live-channel").textContent = nowData.display_name || nowData.channel;
     $("live-title").textContent = nowData.title || "";
   } else {
     $("live-indicator").classList.add("hidden");
@@ -195,10 +195,11 @@ async function updateTopChannels() {
   channels.forEach((c, i) => {
     const row = document.createElement("div");
     row.className = "ranked-row";
+    const display = c.display_name || c.channel;
     row.innerHTML = `
       <div class="rank mono">#${i + 1}</div>
-      <div class="avatar" style="background:${avatarColor(c.channel)}">${c.channel[0].toUpperCase()}<img src="/avatars/${PLATFORM}/${encodeURIComponent(c.channel)}" alt="" onerror="this.remove()"></div>
-      <div class="name">${c.channel}</div>
+      <div class="avatar" style="background:${avatarColor(c.channel)}">${display[0].toUpperCase()}<img src="/avatars/${PLATFORM}/${encodeURIComponent(c.channel)}" alt="" onerror="this.remove()"></div>
+      <div class="name">${display}</div>
       <div class="value mono">${fmtDuration(c.seconds)}</div>
       <div class="bar"><span style="width:${(c.seconds / max * 100).toFixed(1)}%"></span></div>
     `;

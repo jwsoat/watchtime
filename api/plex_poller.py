@@ -7,8 +7,9 @@ same cadence as the heartbeat interval and write one `media_heartbeats` row per
 actively-playing video session. This captures playback on every device (TV,
 phone, native apps), not just the browser.
 
-Enabled by setting PLEX_BASE_URL and PLEX_TOKEN. When unset, the poller is a
-no-op so tests and Plex-less deployments are unaffected.
+Configured via the `plex_config` row in the API DB (UI at /settings). When no
+config is stored, the loop sleeps without polling, so unconfigured deployments
+incur no traffic.
 """
 import json
 import os
@@ -24,36 +25,71 @@ _VIDEO_TYPES = {"episode", "movie", "clip", "trailer"}
 _ACTIVE_STATES = {"playing", "buffering"}
 
 
-def is_configured() -> bool:
-    return bool(os.environ.get("PLEX_BASE_URL") and os.environ.get("PLEX_TOKEN"))
+def _read_config(db_path: str):
+    """Return (base_url, token, channel_from_studio) from plex_config, or
+    (None, None, False) when missing/unset."""
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT base_url, token, channel_from_studio FROM plex_config WHERE id = 1"
+            ).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return None, None, False
+    if not row:
+        return None, None, False
+    return row[0], row[1], bool(row[2])
 
 
-def _truthy(value) -> bool:
-    return str(value).strip().lower() in ("1", "true", "yes", "on")
-
-
-def _channel_from_studio() -> bool:
-    return _truthy(os.environ.get("PLEX_CHANNEL_FROM_STUDIO"))
+_PLEX_HEADERS_BASE = {
+    "X-Plex-Client-Identifier": "twitch-watchtime",
+    "X-Plex-Product": "twitch-watchtime",
+    "X-Plex-Version": "1.0",
+    "X-Plex-Device-Name": "twitch-watchtime",
+    "X-Plex-Platform": "Python",
+    "Accept": "application/json",
+    "User-Agent": "twitch-watchtime/1.0",
+}
 
 
 def _fetch_sessions(base_url: str, token: str):
     url = f"{base_url.rstrip('/')}/status/sessions"
-    req = urllib.request.Request(
-        url,
-        headers={"X-Plex-Token": token, "Accept": "application/json"},
-    )
+    headers = {**_PLEX_HEADERS_BASE, "X-Plex-Token": token}
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=10) as resp:
         return json.loads(resp.read())
 
 
-def _rows_from_sessions(payload: dict, now: int, channel_from_studio: bool = False):
-    """Turn a Plex /status/sessions JSON payload into media_heartbeats rows.
+# Cache show-level studio lookups so we don't refetch metadata on every poll.
+_STUDIO_CACHE = {}
 
-    When `channel_from_studio` is set, the item's `studio` field is used as the
-    channel (falling back to the series/title when empty) — useful for putting a
-    creator's canonical handle on personal-media items so it lines up with their
-    Twitch/YouTube channel for manual creator-linking.
-    """
+
+def _fetch_studio(base_url: str, token: str, rating_key: str):
+    """Return the `studio` field for a /library/metadata/<rating_key> item.
+    Used to look up a TV show's studio when an episode session itself has no
+    studio set (episodes inherit show-level metadata only via this endpoint)."""
+    if rating_key in _STUDIO_CACHE:
+        return _STUDIO_CACHE[rating_key]
+    url = f"{base_url.rstrip('/')}/library/metadata/{rating_key}"
+    headers = {**_PLEX_HEADERS_BASE, "X-Plex-Token": token}
+    studio = None
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        metas = (data.get("MediaContainer") or {}).get("Metadata") or []
+        if metas:
+            studio = metas[0].get("studio") or None
+    except Exception:
+        pass
+    _STUDIO_CACHE[rating_key] = studio
+    return studio
+
+
+def _rows_from_sessions(payload: dict, now: int, channel_from_studio: bool = False,
+                        base_url: str = None, token: str = None):
     container = payload.get("MediaContainer", {}) if isinstance(payload, dict) else {}
     metadata = container.get("Metadata", []) or []
     rows = []
@@ -61,21 +97,36 @@ def _rows_from_sessions(payload: dict, now: int, channel_from_studio: bool = Fal
         if item.get("type") not in _VIDEO_TYPES:
             continue
         player_state = (item.get("Player") or {}).get("state", "")
-        # The show/series for episodes, otherwise the title itself (movies).
-        # Optionally prefer the curated `studio` field.
         channel = None
         if channel_from_studio:
             channel = item.get("studio")
+            # Episodes don't carry their show's studio field in /status/sessions
+            # — fetch the grandparent (show) metadata to inherit it.
+            if not channel and item.get("grandparentRatingKey") and base_url and token:
+                channel = _fetch_studio(base_url, token, str(item["grandparentRatingKey"]))
         channel = channel or item.get("grandparentTitle") or item.get("title")
         if not channel:
             continue
-        title = item.get("title")
+        title = item.get("title") or ""
+        # Episodes: append " — Show SxxEyy" so the title carries enough context
+        # to identify the playback even when the channel is the studio name.
+        if item.get("type") == "episode":
+            show = item.get("grandparentTitle")
+            season = item.get("parentIndex")
+            episode = item.get("index")
+            suffix = []
+            if show:
+                suffix.append(show)
+            if season is not None and episode is not None:
+                suffix.append(f"S{int(season):02d}E{int(episode):02d}")
+            if suffix:
+                title = f"{title} — {' '.join(suffix)}" if title else " ".join(suffix)
         video_id = str(item.get("ratingKey")) if item.get("ratingKey") is not None else None
         user = (item.get("User") or {}).get("title")
         state = "active" if player_state in _ACTIVE_STATES else "passive"
         rows.append((
             now, "plex", channel.lower(), title, video_id,
-            state, 1, user.lower() if user else None, "plex-poller",
+            state, 1, user.lower() if user else None, None, "plex-poller",
         ))
     return rows
 
@@ -87,8 +138,9 @@ def _insert(db_path: str, rows):
     try:
         conn.executemany(
             "INSERT INTO media_heartbeats "
-            "(ts, platform, channel, title, video_id, state, tab_visible, media_user, client_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(ts, platform, channel, title, video_id, state, tab_visible, "
+            "media_user, display_name, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
         conn.commit()
@@ -97,22 +149,24 @@ def _insert(db_path: str, rows):
 
 
 def _loop(db_path: str, interval: int):
-    base_url = os.environ["PLEX_BASE_URL"]
-    token = os.environ["PLEX_TOKEN"]
-    from_studio = _channel_from_studio()
     while True:
-        try:
-            payload = _fetch_sessions(base_url, token)
-            _insert(db_path, _rows_from_sessions(payload, int(time.time()), from_studio))
-        except Exception as err:  # noqa: BLE001 — keep the poller alive
-            print(f"[watchtime] plex poll failed: {err}")
+        base_url, token, from_studio = _read_config(db_path)
+        if base_url and token:
+            try:
+                payload = _fetch_sessions(base_url, token)
+                _insert(db_path, _rows_from_sessions(
+                    payload, int(time.time()), from_studio,
+                    base_url=base_url, token=token,
+                ))
+            except Exception as err:  # noqa: BLE001 — keep the poller alive
+                print(f"[watchtime] plex poll failed: {err}")
         time.sleep(interval)
 
 
 def start(db_path: str, interval: int):
-    """Start the Plex poller in a daemon thread. No-op when not configured."""
-    if not is_configured():
-        return False
+    """Spawn the Plex poller daemon thread. Always starts; the loop itself
+    no-ops when config is missing, so saving config via the UI takes effect
+    on the next tick without a restart."""
     thread = threading.Thread(
         target=_loop, args=(db_path, interval), name="plex-poller", daemon=True
     )

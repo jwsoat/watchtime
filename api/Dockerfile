@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py gdrive.py ./
+COPY main.py gdrive.py plex_poller.py ./
 COPY static/ ./static/
 
 EXPOSE 8000

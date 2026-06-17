@@ -123,6 +123,24 @@ def migrate_db(conn):
     cols = {row[1] for row in conn.execute("PRAGMA table_info(heartbeats)")}
     if "twitch_user" not in cols:
         conn.execute("ALTER TABLE heartbeats ADD COLUMN twitch_user TEXT")
+    acct_cols = {row[1] for row in conn.execute("PRAGMA table_info(user_accounts)")}
+    for col in ("x_user", "facebook_user", "instagram_user", "plex_user"):
+        if col not in acct_cols:
+            conn.execute(f"ALTER TABLE user_accounts ADD COLUMN {col} TEXT")
+    media_cols = {row[1] for row in conn.execute("PRAGMA table_info(media_heartbeats)")}
+    if "display_name" not in media_cols:
+        conn.execute("ALTER TABLE media_heartbeats ADD COLUMN display_name TEXT")
+    # One-time seed of plex_config from legacy env vars when present.
+    cur = conn.execute("SELECT base_url, token FROM plex_config WHERE id = 1").fetchone()
+    if cur and not cur[0] and not cur[1]:
+        env_url = os.environ.get("PLEX_BASE_URL")
+        env_token = os.environ.get("PLEX_TOKEN")
+        if env_url and env_token:
+            studio = 1 if str(os.environ.get("PLEX_CHANNEL_FROM_STUDIO", "")).lower() in ("1", "true", "yes", "on") else 0
+            conn.execute(
+                "UPDATE plex_config SET base_url = ?, token = ?, channel_from_studio = ? WHERE id = 1",
+                (env_url, env_token, studio),
+            )
     _migrate_channel_links_to_creators(conn)
 
 
@@ -210,16 +228,17 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_yt_channel_ts
                 ON youtube_heartbeats(channel, ts);
             CREATE TABLE IF NOT EXISTS media_heartbeats (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts          INTEGER NOT NULL,
-                platform    TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex')),
-                channel     TEXT    NOT NULL,
-                title       TEXT,
-                video_id    TEXT,
-                state       TEXT    NOT NULL CHECK(state IN ('active','passive')),
-                tab_visible INTEGER NOT NULL CHECK(tab_visible IN (0,1)),
-                media_user  TEXT,
-                client_id   TEXT    NOT NULL
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts           INTEGER NOT NULL,
+                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex')),
+                channel      TEXT    NOT NULL,
+                title        TEXT,
+                video_id     TEXT,
+                state        TEXT    NOT NULL CHECK(state IN ('active','passive')),
+                tab_visible  INTEGER NOT NULL CHECK(tab_visible IN (0,1)),
+                media_user   TEXT,
+                display_name TEXT,
+                client_id    TEXT    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_media_platform_ts
                 ON media_heartbeats(platform, ts);
@@ -244,11 +263,23 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS idx_creator_aliases_group
                 ON creator_aliases(group_id);
+            CREATE TABLE IF NOT EXISTS plex_config (
+                id                   INTEGER PRIMARY KEY CHECK (id = 1),
+                base_url             TEXT,
+                token                TEXT,
+                channel_from_studio  INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT OR IGNORE INTO plex_config (id, base_url, token, channel_from_studio)
+                VALUES (1, NULL, NULL, 0);
             CREATE TABLE IF NOT EXISTS user_accounts (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                label         TEXT NOT NULL,
-                twitch_user   TEXT,
-                youtube_user  TEXT,
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                label           TEXT NOT NULL,
+                twitch_user     TEXT,
+                youtube_user    TEXT,
+                x_user          TEXT,
+                facebook_user   TEXT,
+                instagram_user  TEXT,
+                plex_user       TEXT,
                 UNIQUE(twitch_user, youtube_user)
             );
         """)
@@ -320,6 +351,7 @@ class MediaHeartbeat(BaseModel):
     tab_visible: bool
     client_id: str = Field(..., min_length=1, max_length=64)
     media_user: Optional[str] = Field(default=None, max_length=128)
+    display_name: Optional[str] = Field(default=None, max_length=128)
 
 
 class MediaHeartbeatBatch(BaseModel):
@@ -335,6 +367,16 @@ class UserAccount(BaseModel):
     label: str = Field(..., min_length=1, max_length=64)
     twitch_user: Optional[str] = Field(default=None, max_length=64)
     youtube_user: Optional[str] = Field(default=None, max_length=128)
+    x_user: Optional[str] = Field(default=None, max_length=128)
+    facebook_user: Optional[str] = Field(default=None, max_length=128)
+    instagram_user: Optional[str] = Field(default=None, max_length=128)
+    plex_user: Optional[str] = Field(default=None, max_length=128)
+
+
+class PlexConfig(BaseModel):
+    base_url: Optional[str] = Field(default=None, max_length=512)
+    token: Optional[str] = Field(default=None, max_length=512)
+    channel_from_studio: bool = False
 
 
 class CreatorAlias(BaseModel):
@@ -516,14 +558,16 @@ def media_heartbeats_batch(batch: MediaHeartbeatBatch):
     rows = [
         (hb.ts, hb.platform, hb.channel.lower(), hb.title, hb.video_id,
          hb.state, int(hb.tab_visible),
-         hb.media_user.lower() if hb.media_user else None, hb.client_id)
+         hb.media_user.lower() if hb.media_user else None,
+         hb.display_name, hb.client_id)
         for hb in batch.heartbeats
     ]
     with db() as conn:
         conn.executemany(
             "INSERT INTO media_heartbeats "
-            "(ts, platform, channel, title, video_id, state, tab_visible, media_user, client_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(ts, platform, channel, title, video_id, state, tab_visible, "
+            "media_user, display_name, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     return {"ok": True, "stored": len(rows)}
@@ -756,14 +800,19 @@ def media_stats_now(platform: str, user: Optional[str] = None):
     user_sql, user_params = _media_user_clause(user)
     with db() as conn:
         row = conn.execute(f"""
-            SELECT channel, title, media_user
+            SELECT channel, title, media_user, display_name
             FROM media_heartbeats
             WHERE platform = ? AND ts >= ? AND state = 'active' {user_sql}
             ORDER BY ts DESC LIMIT 1
         """, (platform, cutoff, *user_params)).fetchone()
     if not row:
         return {"channel": None}
-    return {"channel": row["channel"], "title": row["title"], "media_user": row["media_user"]}
+    return {
+        "channel": row["channel"],
+        "display_name": row["display_name"],
+        "title": row["title"],
+        "media_user": row["media_user"],
+    }
 
 
 def _seconds_from_count(n: int) -> int:
@@ -814,6 +863,76 @@ def delete_channel_link(link_id: int):
 
 
 # ---------- Creator links (cross-platform author matching) ----------
+
+@app.get("/settings/plex", dependencies=[Depends(require_api_key)])
+def get_plex_config():
+    """Return current Plex config. Token is masked (length only) — never sent
+    to the browser in plaintext."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT base_url, token, channel_from_studio FROM plex_config WHERE id = 1"
+        ).fetchone()
+    base_url = row["base_url"] if row else None
+    token = row["token"] if row else None
+    return {
+        "base_url": base_url or "",
+        "has_token": bool(token),
+        "channel_from_studio": bool(row["channel_from_studio"]) if row else False,
+        "configured": bool(base_url and token),
+    }
+
+
+@app.put("/settings/plex", dependencies=[Depends(require_api_key)])
+def put_plex_config(cfg: PlexConfig):
+    """Update Plex config. base_url must include scheme. Empty token preserves
+    the stored one (the GET endpoint never returns the real token, so a UI
+    re-save shouldn't have to retype it)."""
+    base_url = (cfg.base_url or "").strip().rstrip("/") or None
+    new_token = (cfg.token or "").strip() or None
+    with db() as conn:
+        if new_token is None:
+            conn.execute(
+                "UPDATE plex_config SET base_url = ?, channel_from_studio = ? WHERE id = 1",
+                (base_url, 1 if cfg.channel_from_studio else 0),
+            )
+        else:
+            conn.execute(
+                "UPDATE plex_config SET base_url = ?, token = ?, channel_from_studio = ? "
+                "WHERE id = 1",
+                (base_url, new_token, 1 if cfg.channel_from_studio else 0),
+            )
+    return {"ok": True}
+
+
+@app.delete("/settings/plex", dependencies=[Depends(require_api_key)])
+def clear_plex_config():
+    with db() as conn:
+        conn.execute(
+            "UPDATE plex_config SET base_url = NULL, token = NULL, channel_from_studio = 0 "
+            "WHERE id = 1"
+        )
+    return {"ok": True}
+
+
+@app.post("/settings/plex/test", dependencies=[Depends(require_api_key)])
+def test_plex_config():
+    """Hit the saved server's /status/sessions endpoint and report success or
+    the upstream error so users can debug their URL / token quickly."""
+    import plex_poller
+    with db() as conn:
+        row = conn.execute(
+            "SELECT base_url, token FROM plex_config WHERE id = 1"
+        ).fetchone()
+    if not row or not row["base_url"] or not row["token"]:
+        raise HTTPException(status_code=400, detail="Plex not configured")
+    try:
+        payload = plex_poller._fetch_sessions(row["base_url"], row["token"])
+        container = payload.get("MediaContainer", {}) if isinstance(payload, dict) else {}
+        sessions = len(container.get("Metadata", []) or [])
+        return {"ok": True, "sessions": sessions}
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Plex unreachable: {err}")
+
 
 @app.get("/settings/creator-links", dependencies=[Depends(require_api_key)])
 def get_creator_links():
@@ -891,38 +1010,137 @@ def delete_creator_group(group_id: int):
     return {"ok": True}
 
 
+class BulkCreatorAlias(BaseModel):
+    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex)$")
+    channel: str = Field(..., min_length=1, max_length=128)
+
+
+class BulkCreatorGroup(BaseModel):
+    label: str = Field(..., min_length=1, max_length=128)
+    aliases: list[BulkCreatorAlias] = Field(default_factory=list)
+
+
+class BulkCreatorPayload(BaseModel):
+    groups: list[BulkCreatorGroup]
+
+
+@app.post("/settings/creator-links/bulk", dependencies=[Depends(require_api_key)])
+def bulk_import_creator_links(payload: BulkCreatorPayload):
+    """Bulk import creator groups and their per-platform aliases.
+
+    Idempotent: existing groups (by label) are reused; aliases already linked
+    to any creator are skipped. Returns per-group counts so the UI can show
+    what was added vs. skipped.
+    """
+    added_groups = 0
+    added_aliases = 0
+    skipped_aliases = 0
+    details = []
+    with db() as conn:
+        for g in payload.groups:
+            grp = conn.execute(
+                "SELECT id FROM creator_groups WHERE label = ?", (g.label,)
+            ).fetchone()
+            if grp:
+                group_id = grp["id"]
+                created = False
+            else:
+                group_id = _create_creator_group(conn, g.label)
+                created = True
+                added_groups += 1
+            grp_added = 0
+            grp_skipped = []
+            for a in g.aliases:
+                channel = a.channel.lower()
+                try:
+                    conn.execute(
+                        "INSERT INTO creator_aliases (group_id, platform, channel) "
+                        "VALUES (?, ?, ?)",
+                        (group_id, a.platform, channel),
+                    )
+                    grp_added += 1
+                    added_aliases += 1
+                except sqlite3.IntegrityError:
+                    grp_skipped.append(f"{a.platform}:{channel}")
+                    skipped_aliases += 1
+            details.append({
+                "label": g.label,
+                "group_created": created,
+                "aliases_added": grp_added,
+                "aliases_skipped": grp_skipped,
+            })
+    return {
+        "ok": True,
+        "groups_created": added_groups,
+        "aliases_added": added_aliases,
+        "aliases_skipped": skipped_aliases,
+        "details": details,
+    }
+
+
+USER_ACCOUNT_PLATFORMS = (
+    ("twitch", "twitch_user"),
+    ("youtube", "youtube_user"),
+    ("x", "x_user"),
+    ("facebook", "facebook_user"),
+    ("instagram", "instagram_user"),
+    ("plex", "plex_user"),
+)
+
+
+def _account_row_to_dict(r):
+    return {
+        "id": r["id"],
+        "label": r["label"],
+        "twitch_user": r["twitch_user"],
+        "youtube_user": r["youtube_user"],
+        "x_user": r["x_user"],
+        "facebook_user": r["facebook_user"],
+        "instagram_user": r["instagram_user"],
+        "plex_user": r["plex_user"],
+    }
+
+
 @app.get("/settings/user-accounts", dependencies=[Depends(require_api_key)])
 def get_user_accounts():
     with db() as conn:
         rows = conn.execute(
-            "SELECT id, label, twitch_user, youtube_user FROM user_accounts ORDER BY id"
+            "SELECT id, label, twitch_user, youtube_user, x_user, "
+            "facebook_user, instagram_user, plex_user "
+            "FROM user_accounts ORDER BY id"
         ).fetchall()
-    return {
-        "accounts": [
-            {"id": r["id"], "label": r["label"],
-             "twitch_user": r["twitch_user"], "youtube_user": r["youtube_user"]}
-            for r in rows
-        ]
-    }
+    return {"accounts": [_account_row_to_dict(r) for r in rows]}
 
 
 @app.post("/settings/user-accounts", dependencies=[Depends(require_api_key)])
 def add_user_account(account: UserAccount):
-    tw = account.twitch_user.lower() if account.twitch_user else None
-    yt = account.youtube_user.lower() if account.youtube_user else None
-    if tw is None and yt is None:
-        raise HTTPException(status_code=400, detail="at least one of twitch_user or youtube_user required")
+    handles = {
+        "twitch_user": account.twitch_user.lower() if account.twitch_user else None,
+        "youtube_user": account.youtube_user.lower() if account.youtube_user else None,
+        "x_user": account.x_user.lower() if account.x_user else None,
+        "facebook_user": account.facebook_user.lower() if account.facebook_user else None,
+        "instagram_user": account.instagram_user.lower() if account.instagram_user else None,
+        "plex_user": account.plex_user.lower() if account.plex_user else None,
+    }
+    if not any(handles.values()):
+        raise HTTPException(
+            status_code=400,
+            detail="at least one platform handle required",
+        )
+    cols = ["label"] + list(handles.keys())
+    vals = [account.label] + list(handles.values())
+    placeholders = ",".join("?" * len(cols))
     with db() as conn:
         try:
             cursor = conn.execute(
-                "INSERT INTO user_accounts (label, twitch_user, youtube_user) VALUES (?, ?, ?)",
-                (account.label, tw, yt),
+                f"INSERT INTO user_accounts ({','.join(cols)}) VALUES ({placeholders})",
+                vals,
             )
             account_id = cursor.lastrowid
         except sqlite3.IntegrityError:
             row = conn.execute(
                 "SELECT id FROM user_accounts WHERE twitch_user IS ? AND youtube_user IS ?",
-                (tw, yt),
+                (handles["twitch_user"], handles["youtube_user"]),
             ).fetchone()
             account_id = row["id"]
     return {"ok": True, "id": account_id}
@@ -1227,35 +1445,43 @@ def merged_channels(window: str = "today", include_passive: bool = True, user: O
     """Per-creator watch time rolled up across every platform.
 
     Channels linked via creator-links collapse into one row; unlinked channels
-    are their own row. `user` is a user_accounts label that filters Twitch +
-    YouTube (media platforms have no viewer-account linking and are unfiltered).
+    are their own row. `user` is a user_accounts label that filters every
+    platform by its corresponding handle (twitch_user, youtube_user, x_user,
+    facebook_user, instagram_user, plex_user).
     """
     since = _window_since(window)
     with db() as conn:
-        tw_user, yt_user = _resolve_merged_user(conn, user)
-        counts = _platform_channel_seconds(conn, since, tw_user, yt_user, include_passive)
+        users = _resolve_user_handles(conn, user)
+        counts = _platform_channel_seconds(conn, since, users, include_passive)
         alias_rows = conn.execute(
             "SELECT group_id, platform, channel FROM creator_aliases"
         ).fetchall()
         labels = {g["id"]: g["label"] for g in conn.execute("SELECT id, label FROM creator_groups")}
+        media_names = _media_display_names(conn)
 
     alias_to_group = {(a["platform"], a["channel"]): a["group_id"] for a in alias_rows}
     groups = {}
     for (platform, channel), n in counts.items():
         seconds = _seconds_from_count(n)
+        display = media_names.get((platform, channel)) or channel
         gid = alias_to_group.get((platform, channel))
         if gid is not None:
             key = ("group", gid)
-            label = labels.get(gid, channel)
+            label = labels.get(gid, display)
         else:
             key = ("single", platform, channel)
-            label = channel
+            label = display
         row = groups.get(key)
         if row is None:
             row = {"label": label, "seconds": 0, "members": []}
             groups[key] = row
         row["seconds"] += seconds
-        row["members"].append({"platform": platform, "channel": channel, "seconds": seconds})
+        row["members"].append({
+            "platform": platform,
+            "channel": channel,
+            "display_name": media_names.get((platform, channel)),
+            "seconds": seconds,
+        })
 
     rows = list(groups.values())
     for row in rows:
@@ -1278,24 +1504,26 @@ def merged_daily(days: int = 30, include_passive: bool = True, user: Optional[st
     state_filter = "" if include_passive else "AND state = 'active'"
     day_map = {}
     with db() as conn:
-        tw_user, yt_user = _resolve_merged_user(conn, user)
-        tw_sql, tw_params = _user_clause(tw_user)
+        users = _resolve_user_handles(conn, user)
+        tw_sql, tw_params = _user_clause(users["twitch"])
         for r in conn.execute(f"""
             SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
             FROM heartbeats WHERE ts >= ? {state_filter} {tw_sql} GROUP BY day
         """, (since, *tw_params)):
             day_map[r["day"]] = day_map.get(r["day"], 0) + r["n"]
-        yt_sql, yt_params = _yt_user_clause(yt_user)
+        yt_sql, yt_params = _yt_user_clause(users["youtube"])
         for r in conn.execute(f"""
             SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
             FROM youtube_heartbeats WHERE ts >= ? {state_filter} {yt_sql} GROUP BY day
         """, (since, *yt_params)):
             day_map[r["day"]] = day_map.get(r["day"], 0) + r["n"]
         for p in sorted(MEDIA_PLATFORMS):
+            m_sql, m_params = _media_user_clause(users.get(p))
             for r in conn.execute(f"""
                 SELECT date(ts, 'unixepoch', 'localtime') AS day, COUNT(*) AS n
-                FROM media_heartbeats WHERE platform = ? AND ts >= ? {state_filter} GROUP BY day
-            """, (p, since)):
+                FROM media_heartbeats WHERE platform = ? AND ts >= ?
+                {state_filter} {m_sql} GROUP BY day
+            """, (p, since, *m_params)):
                 day_map[r["day"]] = day_map.get(r["day"], 0) + r["n"]
     return {
         "interval_seconds": HEARTBEAT_INTERVAL,
@@ -1447,31 +1675,56 @@ def _yt_user_clause(user: Optional[str]):
     return "AND youtube_user = ?", (user,)
 
 
-def _platform_channel_seconds(conn, since, tw_user, yt_user, include_passive=True):
+def _platform_channel_seconds(conn, since, users, include_passive=True):
     """Return {(platform, channel): heartbeat_count} across every platform for
-    ts >= since. Twitch/YouTube honour their viewer-account filters; media
-    platforms are unfiltered (no viewer-account linking)."""
+    ts >= since. `users` is a dict {platform: handle-or-None} from
+    _resolve_merged_user; None means no filter for that platform."""
     state_filter = "" if include_passive else "AND state = 'active'"
     counts = {}
-    tw_sql, tw_params = _user_clause(tw_user)
+    tw_sql, tw_params = _user_clause(users.get("twitch"))
     for r in conn.execute(f"""
         SELECT channel, COUNT(*) AS n FROM heartbeats
         WHERE ts >= ? {state_filter} {tw_sql} GROUP BY channel
     """, (since, *tw_params)):
         counts[("twitch", r["channel"])] = r["n"]
-    yt_sql, yt_params = _yt_user_clause(yt_user)
+    yt_sql, yt_params = _yt_user_clause(users.get("youtube"))
     for r in conn.execute(f"""
         SELECT channel, COUNT(*) AS n FROM youtube_heartbeats
         WHERE ts >= ? {state_filter} {yt_sql} GROUP BY channel
     """, (since, *yt_params)):
         counts[("youtube", r["channel"])] = r["n"]
     for p in sorted(MEDIA_PLATFORMS):
+        m_sql, m_params = _media_user_clause(users.get(p))
         for r in conn.execute(f"""
             SELECT channel, COUNT(*) AS n FROM media_heartbeats
-            WHERE platform = ? AND ts >= ? {state_filter} GROUP BY channel
-        """, (p, since)):
+            WHERE platform = ? AND ts >= ? {state_filter} {m_sql} GROUP BY channel
+        """, (p, since, *m_params)):
             counts[(p, r["channel"])] = r["n"]
     return counts
+
+
+def _media_display_names(conn, platform: Optional[str] = None):
+    """Return {(platform, channel): latest display_name}. Filtered to one
+    platform when given, otherwise covers all media platforms."""
+    if platform is None:
+        rows = conn.execute("""
+            SELECT platform, channel, display_name FROM media_heartbeats
+            WHERE id IN (
+                SELECT MAX(id) FROM media_heartbeats
+                WHERE display_name IS NOT NULL
+                GROUP BY platform, channel
+            )
+        """).fetchall()
+        return {(r["platform"], r["channel"]): r["display_name"] for r in rows}
+    rows = conn.execute("""
+        SELECT channel, display_name FROM media_heartbeats
+        WHERE platform = ? AND id IN (
+            SELECT MAX(id) FROM media_heartbeats
+            WHERE platform = ? AND display_name IS NOT NULL
+            GROUP BY channel
+        )
+    """, (platform, platform)).fetchall()
+    return {r["channel"]: r["display_name"] for r in rows}
 
 
 def _media_user_clause(user: Optional[str]):
@@ -1493,30 +1746,45 @@ def _media_stats_since(platform: str, since: int, include_passive: bool, user: O
             GROUP BY channel
             ORDER BY n DESC
         """, (platform, since, *user_params)).fetchall()
+        names = _media_display_names(conn, platform)
     return {
         "interval_seconds": HEARTBEAT_INTERVAL,
         "channels": [
-            {"channel": r["channel"], "seconds": _seconds_from_count(r["n"])}
+            {
+                "channel": r["channel"],
+                "display_name": names.get(r["channel"]),
+                "seconds": _seconds_from_count(r["n"]),
+            }
             for r in rows
         ],
     }
 
 
-def _resolve_merged_user(conn, label: Optional[str]):
-    """Look up a user_accounts label and return (twitch_user, youtube_user).
+def _resolve_user_handles(conn, label: Optional[str]):
+    """Look up a user_accounts label and return per-platform handles.
 
-    Returns (None, None) if label is None (= all accounts).
-    Raises 404 if label not found.
+    Returns dict keyed by platform ('twitch', 'youtube', 'x', 'facebook',
+    'instagram', 'plex'); values are the handle or None. All-None when
+    label is None (= all accounts). Raises 404 if label not found.
     """
+    empty = {p: None for p, _ in USER_ACCOUNT_PLATFORMS}
     if label is None:
-        return None, None
+        return empty
     row = conn.execute(
-        "SELECT twitch_user, youtube_user FROM user_accounts WHERE label = ?",
+        "SELECT twitch_user, youtube_user, x_user, facebook_user, "
+        "instagram_user, plex_user FROM user_accounts WHERE label = ?",
         (label,),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail=f"Merged account '{label}' not found")
-    return row["twitch_user"], row["youtube_user"]
+    return {platform: row[col] for platform, col in USER_ACCOUNT_PLATFORMS}
+
+
+def _resolve_merged_user(conn, label: Optional[str]):
+    """Backwards-compat tuple form of _resolve_user_handles for callers that
+    only consume the Twitch + YouTube handles."""
+    handles = _resolve_user_handles(conn, label)
+    return handles["twitch"], handles["youtube"]
 
 
 def _yt_stats_since(since: int, include_passive: bool, user: Optional[str] = None):
@@ -1552,12 +1820,15 @@ EXPORT_TABLES = {
     ],
     "media_heartbeats": [
         "id", "ts", "platform", "channel", "title", "video_id",
-        "state", "tab_visible", "media_user", "client_id",
+        "state", "tab_visible", "media_user", "display_name", "client_id",
     ],
     "channel_links": ["id", "twitch_channel", "youtube_channel"],
     "creator_groups": ["id", "label"],
     "creator_aliases": ["id", "group_id", "platform", "channel"],
-    "user_accounts": ["id", "label", "twitch_user", "youtube_user"],
+    "user_accounts": [
+        "id", "label", "twitch_user", "youtube_user",
+        "x_user", "facebook_user", "instagram_user", "plex_user",
+    ],
 }
 
 
@@ -1646,8 +1917,8 @@ import plex_poller
 
 @app.on_event("startup")
 def _start_plex_poller():
-    if plex_poller.start(DB_PATH, HEARTBEAT_INTERVAL):
-        print("[watchtime] Plex poller started")
+    plex_poller.start(DB_PATH, HEARTBEAT_INTERVAL)
+    print("[watchtime] Plex poller thread running (idle until configured)")
 
 
 # ---------- Google Drive backup ----------

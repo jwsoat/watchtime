@@ -33,25 +33,83 @@ const RESERVED = new Set([
   "about", "tv", "s", "challenge", "tags",
 ]);
 
-function getPostInfo(video) {
-  // Reel / post id from URL: /reel/<id>/ or /p/<id>/
-  let videoId = null;
-  const urlMatch = location.pathname.match(/\/(reel|p|tv)\/([^/]+)/);
-  if (urlMatch) videoId = urlMatch[2];
+function extractProfileHandle(href) {
+  // Accept "/handle/" or "https://www.instagram.com/handle/" (with optional
+  // query / hash). Reject any link that has further path segments.
+  const m = href.match(
+    /^(?:https?:\/\/(?:www\.)?instagram\.com)?\/([^/?#]+)\/?(?:[?#].*)?$/
+  );
+  if (!m) return null;
+  const h = m[1].toLowerCase();
+  if (RESERVED.has(h)) return null;
+  return h;
+}
 
-  // Author handle: look for a profile link near the video. Profile links are
-  // /<username>/ with no reserved first segment.
-  const container = video.closest("article") || video.closest("div[role='dialog']") || document;
+function getPostInfo(video, selfUser) {
+  // Reel / post id from URL: /reel/<id>/, /reels/<id>/, /p/<id>/, /tv/<id>/.
+  let videoId = null;
+  const urlMatch = location.pathname.match(/\/(?:reel|reels|p|tv)\/([^/]+)/);
+  if (urlMatch) videoId = urlMatch[1];
+
   let channel = null;
-  const links = container.querySelectorAll('a[href^="/"]');
-  for (const a of links) {
-    const m = a.getAttribute("href").match(/^\/([^/?#]+)\/?$/);
-    if (m && !RESERVED.has(m[1])) { channel = m[1].toLowerCase(); break; }
+
+  // Walk up from the playing video and, at each ancestor, look for the
+  // uploader's avatar (`img[alt="<handle>'s profile picture"]`). Captions and
+  // tagged-user mentions render as profile links too, so matching on `<a>`
+  // alone misattributes the post to whoever is mentioned in the caption. The
+  // avatar img only appears once per post — in the header — and its alt text
+  // is the uploader's handle.
+  function handleFromAvatar(root) {
+    const imgs = root.querySelectorAll('img[alt$="profile picture"]');
+    for (const img of imgs) {
+      const alt = img.getAttribute("alt") || "";
+      const m = alt.match(/^([A-Za-z0-9._]+)['’]s profile picture/);
+      if (m) {
+        const h = m[1].toLowerCase();
+        if (h !== selfUser) return h;
+      }
+    }
+    return null;
   }
-  // On a profile page the username is the first path segment.
+
+  let node = video.parentElement;
+  while (node && node !== document.body && !channel) {
+    channel = handleFromAvatar(node);
+    if (!channel) node = node.parentElement;
+  }
+
+  // Fallback: scan profile links in ancestors of video, but only those
+  // ancestors that ALSO contain a profile-picture image (header markup). This
+  // avoids caption @mentions, which never sit next to an avatar.
+  if (!channel) {
+    let n = video.parentElement;
+    while (n && n !== document.body && !channel) {
+      if (n.querySelector('img[alt$="profile picture"]')) {
+        const links = n.querySelectorAll("a[href]");
+        for (const a of links) {
+          const h = extractProfileHandle(a.getAttribute("href") || "");
+          if (h && h !== selfUser) { channel = h; break; }
+        }
+      }
+      n = n.parentElement;
+    }
+  }
+
+  // Single-reel / single-post page: og:title is "<Name> (@<handle>) on Instagram"
+  if (!channel) {
+    const og = document.querySelector('meta[property="og:title"]');
+    const content = og?.getAttribute("content") || "";
+    const m = content.match(/\(@([A-Za-z0-9._]+)\)/);
+    if (m) channel = m[1].toLowerCase();
+  }
+
+  // Profile page: first path segment IS the uploader.
   if (!channel) {
     const m = location.pathname.match(/^\/([^/]+)\/?$/);
-    if (m && !RESERVED.has(m[1])) channel = m[1].toLowerCase();
+    if (m) {
+      const h = m[1].toLowerCase();
+      if (!RESERVED.has(h)) channel = h;
+    }
   }
 
   let title = null;
@@ -72,6 +130,9 @@ function detectInstagramUser() {
   return null;
 }
 
+let igUserFallback = null;
+chrome.storage.local.get("instagramUser", ({ instagramUser: u }) => { igUserFallback = u || null; });
+
 let tickInterval = null;
 let firstTick = null;
 function stopTicking() {
@@ -85,7 +146,8 @@ function tick() {
   const video = getPlayingVideo();
   if (!video) return;
 
-  const { channel, videoId, title } = getPostInfo(video);
+  const selfUser = detectInstagramUser() || igUserFallback;
+  const { channel, videoId, title } = getPostInfo(video, selfUser);
   if (!channel) return;
 
   const tabVisible = document.visibilityState === "visible";
@@ -99,7 +161,7 @@ function tick() {
     video_id: videoId,
     state: idle ? "passive" : "active",
     tab_visible: tabVisible,
-    media_user: detectInstagramUser(),
+    media_user: selfUser,
   };
 
   try {

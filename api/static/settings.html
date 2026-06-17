@@ -43,26 +43,31 @@
       </nav>
     </div>
 
-    <div class="card" style="max-width:640px; margin-bottom:16px">
+    <div class="card" style="max-width:760px; margin-bottom:16px">
       <h2>Your accounts</h2>
       <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
-        Tell the dashboard which Twitch and YouTube accounts are you. The merged view picker uses these labels.
+        Tell the dashboard which handles on each platform are you. The merged
+        view filters every platform by its matching handle so cross-platform
+        watch time lines up even when your handles differ.
       </p>
       <table>
         <thead>
           <tr>
             <th>Label</th>
-            <th>Twitch user</th>
-            <th>YouTube user</th>
+            <th>Handles</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="accounts-tbody"></tbody>
       </table>
-      <form id="add-account-form" class="add-row">
-        <input id="input-label" type="text" placeholder="Label (e.g. Me)" autocomplete="off">
-        <input id="input-account-twitch" type="text" placeholder="Twitch handle (optional)" autocomplete="off">
-        <input id="input-account-youtube" type="text" placeholder="YouTube handle (optional)" autocomplete="off">
+      <form id="add-account-form" class="add-row" style="flex-wrap:wrap;gap:8px">
+        <input id="input-label" type="text" placeholder="Label (e.g. Me)" autocomplete="off" style="flex:1 1 140px;min-width:140px">
+        <input id="input-account-twitch" type="text" placeholder="Twitch handle" autocomplete="off" style="flex:1 1 140px;min-width:120px">
+        <input id="input-account-youtube" type="text" placeholder="YouTube handle" autocomplete="off" style="flex:1 1 140px;min-width:120px">
+        <input id="input-account-x" type="text" placeholder="X handle" autocomplete="off" style="flex:1 1 140px;min-width:120px">
+        <input id="input-account-facebook" type="text" placeholder="Facebook handle" autocomplete="off" style="flex:1 1 140px;min-width:120px">
+        <input id="input-account-instagram" type="text" placeholder="Instagram handle" autocomplete="off" style="flex:1 1 140px;min-width:120px">
+        <input id="input-account-plex" type="text" placeholder="Plex user" autocomplete="off" style="flex:1 1 140px;min-width:120px">
         <button type="submit">Add account</button>
       </form>
       <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border)">
@@ -154,6 +159,39 @@
       </div>
     </div>
 
+    <div class="card" style="max-width:640px; margin-bottom:16px">
+      <h2>Plex server</h2>
+      <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
+        Set a Plex Media Server URL and X-Plex-Token. The server polls
+        <code>/status/sessions</code> on the same cadence as the extension and
+        records video playback on every device, not just the browser.
+      </p>
+      <div class="field" style="margin-bottom:12px">
+        <label for="plex-base-url" style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:4px">Server URL</label>
+        <input id="plex-base-url" type="url" placeholder="http://192.168.1.100:32400" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px">
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label for="plex-token" style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:4px">X-Plex-Token</label>
+        <input id="plex-token" type="password" placeholder="leave blank to keep saved token" autocomplete="off" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px">
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          Find your token in Plex → Settings → Network → Show Advanced, or grab
+          <code>X-Plex-Token</code> from any session URL.
+        </div>
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+          <input id="plex-channel-from-studio" type="checkbox">
+          Use item <code>studio</code> field as channel (for cross-platform creator linking)
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="plex-save-btn" type="button">Save</button>
+        <button id="plex-test-btn" type="button">Test connection</button>
+        <button id="plex-clear-btn" type="button" class="del-btn">Clear</button>
+        <span id="plex-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+
     <div class="card" style="max-width:640px">
       <h2>Creator links</h2>
       <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
@@ -186,6 +224,32 @@
         <button type="submit">Add channel</button>
       </form>
       <div id="creator-status" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+
+      <details style="margin-top:18px">
+        <summary style="cursor:pointer;font-size:13px;color:var(--muted)">Bulk import (JSON)</summary>
+        <p style="color:var(--muted); font-size:12px; margin:8px 0">
+          Paste JSON to add many creators at once. Existing groups (by name) are
+          reused; channels already linked are skipped.
+        </p>
+        <textarea id="bulk-creators-json" rows="10"
+          style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px;font-family:monospace;font-size:12px"
+          placeholder='{
+  "groups": [
+    {
+      "label": "MrBeast",
+      "aliases": [
+        {"platform": "youtube", "channel": "mrbeast"},
+        {"platform": "x",       "channel": "mrbeast"}
+      ]
+    }
+  ]
+}'></textarea>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <button id="bulk-import-btn" type="button">Import</button>
+          <button id="bulk-load-sample-btn" type="button">Load sample</button>
+          <span id="bulk-import-status" style="font-size:12px;color:var(--muted)"></span>
+        </div>
+      </details>
     </div>
   </div>
 

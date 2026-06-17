@@ -70,6 +70,9 @@ function detectXUser() {
   return null;
 }
 
+let xUserFallback = null;
+chrome.storage.local.get("xUser", ({ xUser: u }) => { xUserFallback = u || null; });
+
 let tickInterval = null;
 let firstTick = null;
 function stopTicking() {
@@ -97,7 +100,7 @@ function tick() {
     video_id: videoId,
     state: idle ? "passive" : "active",
     tab_visible: tabVisible,
-    media_user: detectXUser(),
+    media_user: detectXUser() || xUserFallback,
   };
 
   try {
