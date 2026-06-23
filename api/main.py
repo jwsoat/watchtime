@@ -1245,10 +1245,32 @@ def add_user_account(account: UserAccount):
             status_code=400,
             detail="at least one platform handle required",
         )
-    cols = ["label"] + list(handles.keys())
-    vals = [account.label] + list(handles.values())
-    placeholders = ",".join("?" * len(cols))
     with db() as conn:
+        existing = conn.execute(
+            "SELECT id, twitch_user, youtube_user, x_user, facebook_user, "
+            "instagram_user, plex_user FROM user_accounts WHERE label = ?",
+            (account.label,),
+        ).fetchone()
+        if existing:
+            merged = {
+                col: (handles[col] if handles[col] is not None else existing[col])
+                for col in handles
+            }
+            conn.execute(
+                "UPDATE user_accounts SET twitch_user = ?, youtube_user = ?, "
+                "x_user = ?, facebook_user = ?, instagram_user = ?, plex_user = ? "
+                "WHERE id = ?",
+                (
+                    merged["twitch_user"], merged["youtube_user"],
+                    merged["x_user"], merged["facebook_user"],
+                    merged["instagram_user"], merged["plex_user"],
+                    existing["id"],
+                ),
+            )
+            return {"ok": True, "id": existing["id"]}
+        cols = ["label"] + list(handles.keys())
+        vals = [account.label] + list(handles.values())
+        placeholders = ",".join("?" * len(cols))
         try:
             cursor = conn.execute(
                 f"INSERT INTO user_accounts ({','.join(cols)}) VALUES ({placeholders})",
