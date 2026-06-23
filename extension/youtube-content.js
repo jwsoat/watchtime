@@ -11,7 +11,11 @@ let lastActivity = Date.now();
 });
 
 function getVideoId() {
-  return new URLSearchParams(location.search).get("v");
+  const v = new URLSearchParams(location.search).get("v");
+  if (v) return v;
+  const path = location.pathname.match(/^\/(?:live|embed|shorts)\/([A-Za-z0-9_-]{6,})/);
+  if (path) return path[1];
+  return null;
 }
 
 function getPlaylistId() {
@@ -19,12 +23,15 @@ function getPlaylistId() {
 }
 
 function getChannelFromDom() {
-  // Prefer @handle from href — needed for unavatar.io avatar lookup
-  const byLink = document.querySelector(
-    "ytd-video-owner-renderer a[href^='/@'], " +
-    "ytd-channel-name a[href^='/@'], " +
-    "ytd-video-owner-renderer a[href^='/channel/'], " +
-    "yt-reel-channel-bar-view-model a[href^='/@']"
+  // Prefer @handle from href — needed for unavatar.io avatar lookup.
+  // Scope strictly to owner widgets; unscoped ytd-channel-name would match
+  // comments, recommended-video cards, or the "About this game" panel
+  // (e.g. /@FIFA on gaming videos) and mis-attribute the channel.
+  const owner = document.querySelector(
+    "ytd-video-owner-renderer, yt-reel-channel-bar-view-model"
+  );
+  const byLink = owner?.querySelector(
+    "a[href^='/@'], a[href^='/channel/']"
   );
   const href = byLink?.getAttribute("href") || "";
   const handle = href.match(/\/@([^/?#]+)/)?.[1];
