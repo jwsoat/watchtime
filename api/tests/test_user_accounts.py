@@ -92,6 +92,58 @@ def test_delete_nonexistent_account_returns_404(client, auth_headers):
     assert res.status_code == 404
 
 
+def test_resubmit_same_label_merges_new_handles(client, auth_headers):
+    r1 = client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "twitch_user": "jwsoat"},
+        headers=auth_headers,
+    )
+    r2 = client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "plex_user": "Alice"},
+        headers=auth_headers,
+    )
+    assert r1.json()["id"] == r2.json()["id"]
+    accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
+    assert len(accounts) == 1
+    assert accounts[0]["twitch_user"] == "jwsoat"
+    assert accounts[0]["plex_user"] == "alice"
+
+
+def test_resubmit_same_label_overwrites_existing_handle(client, auth_headers):
+    client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "plex_user": "old"},
+        headers=auth_headers,
+    )
+    client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "plex_user": "new"},
+        headers=auth_headers,
+    )
+    accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
+    assert len(accounts) == 1
+    assert accounts[0]["plex_user"] == "new"
+
+
+def test_resubmit_blank_field_preserves_existing(client, auth_headers):
+    client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "twitch_user": "jw", "plex_user": "alice"},
+        headers=auth_headers,
+    )
+    client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "youtube_user": "jwyt"},
+        headers=auth_headers,
+    )
+    accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
+    assert len(accounts) == 1
+    assert accounts[0]["twitch_user"] == "jw"
+    assert accounts[0]["plex_user"] == "alice"
+    assert accounts[0]["youtube_user"] == "jwyt"
+
+
 def test_user_accounts_require_auth(client):
     assert client.get("/settings/user-accounts").status_code == 401
     assert client.post(
