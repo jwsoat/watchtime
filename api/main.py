@@ -141,6 +141,16 @@ def migrate_db(conn):
                 "UPDATE plex_config SET base_url = ?, token = ?, channel_from_studio = ? WHERE id = 1",
                 (env_url, env_token, studio),
             )
+    # One-time seed of home_assistant_config from env vars when present.
+    cur = conn.execute("SELECT base_url, token FROM home_assistant_config WHERE id = 1").fetchone()
+    if cur and not cur[0] and not cur[1]:
+        env_url = os.environ.get("HA_BASE_URL")
+        env_token = os.environ.get("HA_TOKEN")
+        if env_url and env_token:
+            conn.execute(
+                "UPDATE home_assistant_config SET base_url = ?, token = ? WHERE id = 1",
+                (env_url, env_token),
+            )
     _migrate_channel_links_to_creators(conn)
     _seed_default_creators(conn)
 
@@ -389,6 +399,13 @@ def init_db():
             );
             INSERT OR IGNORE INTO plex_config (id, base_url, token, channel_from_studio)
                 VALUES (1, NULL, NULL, 1);
+            CREATE TABLE IF NOT EXISTS home_assistant_config (
+                id        INTEGER PRIMARY KEY CHECK (id = 1),
+                base_url  TEXT,
+                token     TEXT
+            );
+            INSERT OR IGNORE INTO home_assistant_config (id, base_url, token)
+                VALUES (1, NULL, NULL);
             CREATE TABLE IF NOT EXISTS user_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 label           TEXT NOT NULL,
@@ -495,6 +512,11 @@ class PlexConfig(BaseModel):
     base_url: Optional[str] = Field(default=None, max_length=512)
     token: Optional[str] = Field(default=None, max_length=512)
     channel_from_studio: bool = False
+
+
+class HomeAssistantConfig(BaseModel):
+    base_url: Optional[str] = Field(default=None, max_length=512)
+    token: Optional[str] = Field(default=None, max_length=2048)
 
 
 class CreatorAlias(BaseModel):
@@ -1030,6 +1052,69 @@ def clear_plex_config():
             "WHERE id = 1"
         )
     return {"ok": True}
+
+
+@app.get("/settings/home-assistant", dependencies=[Depends(require_api_key)])
+def get_home_assistant_config():
+    """Return current Home Assistant config. Token is masked (presence only)."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT base_url, token FROM home_assistant_config WHERE id = 1"
+        ).fetchone()
+    base_url = row["base_url"] if row else None
+    token = row["token"] if row else None
+    return {
+        "base_url": base_url or "",
+        "has_token": bool(token),
+        "configured": bool(base_url and token),
+    }
+
+
+@app.put("/settings/home-assistant", dependencies=[Depends(require_api_key)])
+def put_home_assistant_config(cfg: HomeAssistantConfig):
+    """Update Home Assistant config. Empty token preserves the stored one."""
+    base_url = (cfg.base_url or "").strip().rstrip("/") or None
+    new_token = (cfg.token or "").strip() or None
+    with db() as conn:
+        if new_token is None:
+            conn.execute(
+                "UPDATE home_assistant_config SET base_url = ? WHERE id = 1",
+                (base_url,),
+            )
+        else:
+            conn.execute(
+                "UPDATE home_assistant_config SET base_url = ?, token = ? WHERE id = 1",
+                (base_url, new_token),
+            )
+    return {"ok": True}
+
+
+@app.delete("/settings/home-assistant", dependencies=[Depends(require_api_key)])
+def clear_home_assistant_config():
+    with db() as conn:
+        conn.execute(
+            "UPDATE home_assistant_config SET base_url = NULL, token = NULL WHERE id = 1"
+        )
+    return {"ok": True}
+
+
+@app.post("/settings/home-assistant/test", dependencies=[Depends(require_api_key)])
+def test_home_assistant_config():
+    """Fetch /api/states and report how many media_player entities are on
+    YouTube right now."""
+    import home_assistant_poller
+    with db() as conn:
+        row = conn.execute(
+            "SELECT base_url, token FROM home_assistant_config WHERE id = 1"
+        ).fetchone()
+    if not row or not row["base_url"] or not row["token"]:
+        raise HTTPException(status_code=400, detail="Home Assistant not configured")
+    try:
+        states = home_assistant_poller._fetch_states(row["base_url"], row["token"])
+        rows = home_assistant_poller._rows_from_states(states, int(time.time()))
+        return {"ok": True, "youtube_sessions": len(rows)}
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"Home Assistant unreachable: {err}")
 
 
 @app.post("/settings/plex/test", dependencies=[Depends(require_api_key)])
@@ -2073,12 +2158,19 @@ async def import_data(file: UploadFile = File(...), mode: str = "merge"):
 # ---------- Plex poller ----------
 
 import plex_poller
+import home_assistant_poller
 
 
 @app.on_event("startup")
 def _start_plex_poller():
     plex_poller.start(DB_PATH, HEARTBEAT_INTERVAL)
     print("[watchtime] Plex poller thread running (idle until configured)")
+
+
+@app.on_event("startup")
+def _start_home_assistant_poller():
+    home_assistant_poller.start(DB_PATH, HEARTBEAT_INTERVAL)
+    print("[watchtime] Home Assistant poller thread running (idle until configured)")
 
 
 # ---------- Google Drive backup ----------

@@ -484,6 +484,60 @@ $("plex-clear-btn").addEventListener("click", async () => {
   await loadPlexConfig();
 });
 
+async function loadHomeAssistantConfig() {
+  const cfg = await apiReq("GET", "/settings/home-assistant");
+  $("ha-base-url").value = cfg.base_url || "";
+  $("ha-token").value = "";
+  $("ha-token").placeholder = cfg.has_token
+    ? "leave blank to keep saved token"
+    : "paste your long-lived access token";
+  const status = $("ha-status");
+  if (cfg.configured) {
+    status.textContent = "Configured — polling active.";
+    status.style.color = "var(--ok, #6a9a78)";
+  } else {
+    status.textContent = "Not configured.";
+    status.style.color = "var(--muted)";
+  }
+}
+
+$("ha-save-btn").addEventListener("click", async () => {
+  const body = {
+    base_url: $("ha-base-url").value.trim(),
+    token: $("ha-token").value,
+  };
+  const status = $("ha-status");
+  status.textContent = "Saving…";
+  status.style.color = "var(--muted)";
+  try {
+    await apiReq("PUT", "/settings/home-assistant", body);
+    await loadHomeAssistantConfig();
+  } catch (err) {
+    status.textContent = `Save failed: ${err.message}`;
+    status.style.color = "var(--danger, #d07070)";
+  }
+});
+
+$("ha-test-btn").addEventListener("click", async () => {
+  const status = $("ha-status");
+  status.textContent = "Testing…";
+  status.style.color = "var(--muted)";
+  try {
+    const r = await apiReq("POST", "/settings/home-assistant/test");
+    status.textContent = `OK — ${r.youtube_sessions} media_player(s) on YouTube right now.`;
+    status.style.color = "var(--ok, #6a9a78)";
+  } catch (err) {
+    status.textContent = `Test failed: ${err.message}`;
+    status.style.color = "var(--danger, #d07070)";
+  }
+});
+
+$("ha-clear-btn").addEventListener("click", async () => {
+  if (!confirm("Clear Home Assistant URL and token? Polling will stop.")) return;
+  await apiReq("DELETE", "/settings/home-assistant");
+  await loadHomeAssistantConfig();
+});
+
 async function boot() {
   await Promise.all([
     loadCreators(),
@@ -492,6 +546,7 @@ async function boot() {
     loadChannelSuggestions(),
     loadGdriveStatus(),
     loadPlexConfig(),
+    loadHomeAssistantConfig(),
   ]);
 }
 

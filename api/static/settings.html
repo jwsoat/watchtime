@@ -193,6 +193,35 @@
       </div>
     </div>
 
+    <div class="card" style="max-width:640px; margin-bottom:16px">
+      <h2>Home Assistant</h2>
+      <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
+        Point at your Home Assistant instance to track YouTube playback on any
+        <code>media_player</code> entity (TV, Chromecast, Google Cast, etc.).
+        When the media player's <code>app_name</code> is <code>youtube</code>,
+        the server records a YouTube heartbeat with the channel taken from
+        <code>media_artist</code> and title from <code>media_title</code>.
+      </p>
+      <div class="field" style="margin-bottom:12px">
+        <label for="ha-base-url" style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:4px">Base URL</label>
+        <input id="ha-base-url" type="url" placeholder="http://homeassistant.local:8123" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px">
+      </div>
+      <div class="field" style="margin-bottom:12px">
+        <label for="ha-token" style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:4px">Long-lived access token</label>
+        <input id="ha-token" type="password" placeholder="leave blank to keep saved token" autocomplete="off" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px">
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          Create one from your Home Assistant profile → Security → Long-lived
+          access tokens.
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="ha-save-btn" type="button">Save</button>
+        <button id="ha-test-btn" type="button">Test connection</button>
+        <button id="ha-clear-btn" type="button" class="del-btn">Clear</button>
+        <span id="ha-status" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+    </div>
+
     <div class="card" style="max-width:640px">
       <h2>Creator links</h2>
       <p style="color:var(--muted); font-size:13px; margin:8px 0 16px">
