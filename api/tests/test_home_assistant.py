@@ -10,12 +10,17 @@ from tests.conftest import DB_PATH
 @pytest.fixture(autouse=True)
 def _reset_ha_config():
     """Config lives outside the shared _clean_youtube_data fixture, so reset
-    it here between tests to keep them independent regardless of order."""
+    it here between tests. The entity_users table is wiped then re-seeded
+    with the baked-in defaults so both defaults and mapping tests are
+    deterministic no matter which test ran previously."""
+    import main
     conn = sqlite3.connect(DB_PATH)
     try:
         conn.execute(
             "UPDATE home_assistant_config SET base_url = NULL, token = NULL WHERE id = 1"
         )
+        conn.execute("DELETE FROM home_assistant_entity_users")
+        main._seed_default_ha_entity_users(conn)
         conn.commit()
     finally:
         conn.close()
@@ -220,3 +225,96 @@ def test_settings_test_requires_config(client, auth_headers, db):
     db.commit()
     res = client.post("/settings/home-assistant/test", headers=auth_headers)
     assert res.status_code == 400
+
+
+# ---------- entity → user mapping ----------
+
+def test_rows_populate_youtube_user_for_mapped_entity():
+    payload = _states({
+        "entity_id": "media_player.jwsoat_tv",
+        "state": "playing",
+        "attributes": {"app_name": "youtube", "media_artist": "chan", "media_title": "vid"},
+    })
+    rows = home_assistant_poller._rows_from_states(
+        payload, now=1, entity_users={"media_player.jwsoat_tv": "jwsoat"},
+    )
+    assert rows[0][7] == "jwsoat"
+
+
+def test_rows_leave_youtube_user_null_for_unmapped_entity():
+    payload = _states({
+        "entity_id": "media_player.guest_room",
+        "state": "playing",
+        "attributes": {"app_name": "youtube", "media_artist": "chan", "media_title": "vid"},
+    })
+    rows = home_assistant_poller._rows_from_states(
+        payload, now=1, entity_users={"media_player.jwsoat_tv": "jwsoat"},
+    )
+    assert rows[0][7] is None
+
+
+def test_default_seed_maps_jwsoat_tv_to_jwsoat():
+    """The seeded row from _seed_default_ha_entity_users survives boot."""
+    mapping = home_assistant_poller._read_entity_users(DB_PATH)
+    assert mapping.get("media_player.jwsoat_tv") == "jwsoat"
+
+
+def test_list_endpoint_returns_seeded_mapping(client, auth_headers):
+    res = client.get("/settings/home-assistant/entity-users", headers=auth_headers)
+    assert res.status_code == 200
+    mappings = res.json()["mappings"]
+    assert {"entity_id": "media_player.jwsoat_tv", "youtube_user": "jwsoat"} in mappings
+
+
+def test_add_endpoint_upserts_mapping(client, auth_headers):
+    res = client.post(
+        "/settings/home-assistant/entity-users",
+        headers=auth_headers,
+        json={"entity_id": "media_player.bedroom", "youtube_user": "Alice"},
+    )
+    assert res.status_code == 200
+    mapping = home_assistant_poller._read_entity_users(DB_PATH)
+    # Lowercased on write so filter queries (WHERE youtube_user = ?) match.
+    assert mapping["media_player.bedroom"] == "alice"
+
+    # Second POST for the same entity overwrites, not duplicates.
+    res = client.post(
+        "/settings/home-assistant/entity-users",
+        headers=auth_headers,
+        json={"entity_id": "media_player.bedroom", "youtube_user": "bob"},
+    )
+    assert res.status_code == 200
+    mapping = home_assistant_poller._read_entity_users(DB_PATH)
+    assert mapping["media_player.bedroom"] == "bob"
+
+
+def test_add_endpoint_rejects_non_media_player_entity(client, auth_headers):
+    res = client.post(
+        "/settings/home-assistant/entity-users",
+        headers=auth_headers,
+        json={"entity_id": "light.kitchen", "youtube_user": "alice"},
+    )
+    assert res.status_code == 422  # pattern validation
+
+
+def test_delete_endpoint_removes_mapping(client, auth_headers, db):
+    db.execute(
+        "INSERT OR REPLACE INTO home_assistant_entity_users (entity_id, youtube_user) "
+        "VALUES (?, ?)",
+        ("media_player.temp", "bob"),
+    )
+    db.commit()
+    res = client.delete(
+        "/settings/home-assistant/entity-users/media_player.temp",
+        headers=auth_headers,
+    )
+    assert res.status_code == 200
+    assert "media_player.temp" not in home_assistant_poller._read_entity_users(DB_PATH)
+
+
+def test_delete_endpoint_404_for_unknown(client, auth_headers):
+    res = client.delete(
+        "/settings/home-assistant/entity-users/media_player.nope",
+        headers=auth_headers,
+    )
+    assert res.status_code == 404

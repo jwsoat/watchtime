@@ -220,6 +220,26 @@
         <button id="ha-clear-btn" type="button" class="del-btn">Clear</button>
         <span id="ha-status" style="font-size:12px;color:var(--muted)"></span>
       </div>
+
+      <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border)">
+        <h3 style="font-size:14px;margin:0 0 8px">Attribute entities to YouTube users</h3>
+        <p style="color:var(--muted); font-size:12px; margin:0 0 12px">
+          Map a <code>media_player</code> entity to a YouTube handle so its
+          playback is credited to that user on the dashboard.
+        </p>
+        <table>
+          <thead>
+            <tr><th>Entity</th><th>YouTube user</th><th></th></tr>
+          </thead>
+          <tbody id="ha-entity-users-tbody"></tbody>
+        </table>
+        <form id="ha-entity-user-form" class="add-row" style="align-items:center">
+          <input id="ha-entity-input" type="text" placeholder="media_player.living_room_tv" autocomplete="off" style="flex:1;min-width:180px">
+          <input id="ha-user-input" type="text" placeholder="youtube handle" autocomplete="off" style="flex:1;min-width:140px">
+          <button type="submit">Add mapping</button>
+        </form>
+        <div id="ha-entity-user-status" style="margin-top:8px;font-size:12px;color:var(--muted)"></div>
+      </div>
     </div>
 
     <div class="card" style="max-width:640px">

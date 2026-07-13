@@ -41,6 +41,21 @@ def _read_config(db_path: str):
     return row[0], row[1]
 
 
+def _read_entity_users(db_path: str):
+    """Return {entity_id: youtube_user} for every configured mapping."""
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT entity_id, youtube_user FROM home_assistant_entity_users"
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError:
+        return {}
+    return {entity_id: user for entity_id, user in rows}
+
+
 def _fetch_states(base_url: str, token: str):
     url = f"{base_url.rstrip('/')}/api/states"
     req = urllib.request.Request(
@@ -55,16 +70,21 @@ def _fetch_states(base_url: str, token: str):
         return json.loads(resp.read())
 
 
-def _rows_from_states(states, now: int):
+def _rows_from_states(states, now: int, entity_users=None):
     """Build youtube_heartbeats rows from a /api/states payload.
 
     Only entities whose id starts with `media_player.` and whose current
     `app_name` attribute names a YouTube app are considered. Channel takes
     `media_artist` (falling back to `media_channel`, which HA populates for
     Cast YouTube on some integrations) and title takes `media_title`. Rows
-    without a channel or title are dropped rather than fabricated."""
+    without a channel or title are dropped rather than fabricated.
+
+    `entity_users` maps entity_id → youtube_user so playback on a specific
+    device is attributed to a specific person on the merged/YouTube dashboard.
+    Entities not in the mapping are recorded with youtube_user = NULL."""
     if not isinstance(states, list):
         return []
+    entity_users = entity_users or {}
     rows = []
     for entity in states:
         if not isinstance(entity, dict):
@@ -91,9 +111,10 @@ def _rows_from_states(states, now: int):
             and len(raw_content_id) == 11
             and "/" not in raw_content_id
         ) else None
+        youtube_user = entity_users.get(entity_id)
         rows.append((
             now, channel.strip().lower(), title,
-            video_id, None, state, 1, None,
+            video_id, None, state, 1, youtube_user,
             f"ha:{entity_id}",
         ))
     return rows
@@ -122,7 +143,8 @@ def _loop(db_path: str, interval: int):
         if base_url and token:
             try:
                 payload = _fetch_states(base_url, token)
-                rows = _rows_from_states(payload, int(time.time()))
+                entity_users = _read_entity_users(db_path)
+                rows = _rows_from_states(payload, int(time.time()), entity_users)
                 _insert(db_path, rows)
             except Exception as err:  # noqa: BLE001 — keep the poller alive
                 print(f"[watchtime] home assistant poll failed: {err}")

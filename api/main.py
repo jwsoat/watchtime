@@ -151,6 +151,7 @@ def migrate_db(conn):
                 "UPDATE home_assistant_config SET base_url = ?, token = ? WHERE id = 1",
                 (env_url, env_token),
             )
+    _seed_default_ha_entity_users(conn)
     _migrate_channel_links_to_creators(conn)
     _seed_default_creators(conn)
 
@@ -254,6 +255,23 @@ DEFAULT_CREATOR_GROUPS = [
         ("youtube", "yugi2xlive"),
     ]),
 ]
+
+
+DEFAULT_HA_ENTITY_USERS = [
+    ("media_player.jwsoat_tv", "jwsoat"),
+]
+
+
+def _seed_default_ha_entity_users(conn):
+    """Seed baked-in HA entity → YouTube user mappings. Idempotent via
+    INSERT OR IGNORE, so user-added rows are preserved. Consistent with
+    _seed_default_creators: deleted defaults reappear on next boot."""
+    for entity_id, youtube_user in DEFAULT_HA_ENTITY_USERS:
+        conn.execute(
+            "INSERT OR IGNORE INTO home_assistant_entity_users "
+            "(entity_id, youtube_user) VALUES (?, ?)",
+            (entity_id, youtube_user.lower()),
+        )
 
 
 def _seed_default_creators(conn):
@@ -406,6 +424,10 @@ def init_db():
             );
             INSERT OR IGNORE INTO home_assistant_config (id, base_url, token)
                 VALUES (1, NULL, NULL);
+            CREATE TABLE IF NOT EXISTS home_assistant_entity_users (
+                entity_id     TEXT PRIMARY KEY,
+                youtube_user  TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS user_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 label           TEXT NOT NULL,
@@ -517,6 +539,11 @@ class PlexConfig(BaseModel):
 class HomeAssistantConfig(BaseModel):
     base_url: Optional[str] = Field(default=None, max_length=512)
     token: Optional[str] = Field(default=None, max_length=2048)
+
+
+class HomeAssistantEntityUser(BaseModel):
+    entity_id: str = Field(..., pattern=r"^media_player\.[a-z0-9_]+$", max_length=128)
+    youtube_user: str = Field(..., min_length=1, max_length=128)
 
 
 class CreatorAlias(BaseModel):
@@ -1095,6 +1122,48 @@ def clear_home_assistant_config():
         conn.execute(
             "UPDATE home_assistant_config SET base_url = NULL, token = NULL WHERE id = 1"
         )
+    return {"ok": True}
+
+
+@app.get("/settings/home-assistant/entity-users", dependencies=[Depends(require_api_key)])
+def list_home_assistant_entity_users():
+    """List every configured HA entity → YouTube user mapping."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT entity_id, youtube_user FROM home_assistant_entity_users "
+            "ORDER BY entity_id"
+        ).fetchall()
+    return {
+        "mappings": [
+            {"entity_id": r["entity_id"], "youtube_user": r["youtube_user"]}
+            for r in rows
+        ]
+    }
+
+
+@app.post("/settings/home-assistant/entity-users", dependencies=[Depends(require_api_key)])
+def add_home_assistant_entity_user(mapping: HomeAssistantEntityUser):
+    """Upsert a single entity → user mapping. Overwrites the existing user
+    for that entity_id (an entity has exactly one owner)."""
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO home_assistant_entity_users (entity_id, youtube_user) "
+            "VALUES (?, ?) ON CONFLICT(entity_id) DO UPDATE SET youtube_user = excluded.youtube_user",
+            (mapping.entity_id, mapping.youtube_user.lower()),
+        )
+    return {"ok": True}
+
+
+@app.delete("/settings/home-assistant/entity-users/{entity_id}",
+            dependencies=[Depends(require_api_key)])
+def delete_home_assistant_entity_user(entity_id: str):
+    with db() as conn:
+        cur = conn.execute(
+            "DELETE FROM home_assistant_entity_users WHERE entity_id = ?",
+            (entity_id,),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="mapping not found")
     return {"ok": True}
 
 

@@ -538,6 +538,48 @@ $("ha-clear-btn").addEventListener("click", async () => {
   await loadHomeAssistantConfig();
 });
 
+async function loadHomeAssistantEntityUsers() {
+  const { mappings } = await apiReq("GET", "/settings/home-assistant/entity-users");
+  const tbody = $("ha-entity-users-tbody");
+  if (!mappings.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="color:var(--muted); padding:8px 0; font-size:12px">No mappings.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = mappings.map(m => `
+    <tr>
+      <td style="font-family:monospace;font-size:12px">${escapeHtml(m.entity_id)}</td>
+      <td>${escapeHtml(m.youtube_user)}</td>
+      <td><button class="del-btn" data-entity="${escapeHtml(m.entity_id)}">×</button></td>
+    </tr>
+  `).join("");
+  tbody.querySelectorAll(".del-btn[data-entity]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await apiReq("DELETE", `/settings/home-assistant/entity-users/${encodeURIComponent(btn.dataset.entity)}`);
+      loadHomeAssistantEntityUsers().catch(console.error);
+    });
+  });
+}
+
+$("ha-entity-user-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const entity_id = $("ha-entity-input").value.trim();
+  const youtube_user = $("ha-user-input").value.trim().toLowerCase();
+  const status = $("ha-entity-user-status");
+  if (!entity_id || !youtube_user) {
+    status.textContent = "Enter both entity id and user.";
+    return;
+  }
+  try {
+    await apiReq("POST", "/settings/home-assistant/entity-users", { entity_id, youtube_user });
+    status.textContent = "";
+    $("ha-entity-input").value = "";
+    $("ha-user-input").value = "";
+    loadHomeAssistantEntityUsers().catch(console.error);
+  } catch (err) {
+    status.textContent = `Failed: ${err.message}`;
+  }
+});
+
 async function boot() {
   await Promise.all([
     loadCreators(),
@@ -547,6 +589,7 @@ async function boot() {
     loadGdriveStatus(),
     loadPlexConfig(),
     loadHomeAssistantConfig(),
+    loadHomeAssistantEntityUsers(),
   ]);
 }
 
