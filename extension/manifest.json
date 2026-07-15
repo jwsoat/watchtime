@@ -27,7 +27,8 @@
     {
       "matches": ["https://player.twitch.tv/*"],
       "js": ["player.js"],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     },
     {
       "matches": [
