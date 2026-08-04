@@ -124,9 +124,11 @@ def migrate_db(conn):
     if "twitch_user" not in cols:
         conn.execute("ALTER TABLE heartbeats ADD COLUMN twitch_user TEXT")
     acct_cols = {row[1] for row in conn.execute("PRAGMA table_info(user_accounts)")}
-    for col in ("x_user", "facebook_user", "instagram_user", "plex_user"):
-        if col not in acct_cols:
-            conn.execute(f"ALTER TABLE user_accounts ADD COLUMN {col} TEXT")
+    if "twitch_user" in acct_cols:
+        for col in ("x_user", "facebook_user", "instagram_user", "plex_user"):
+            if col not in acct_cols:
+                conn.execute(f"ALTER TABLE user_accounts ADD COLUMN {col} TEXT")
+        _migrate_account_handles_to_table(conn)
     media_cols = {row[1] for row in conn.execute("PRAGMA table_info(media_heartbeats)")}
     if "display_name" not in media_cols:
         conn.execute("ALTER TABLE media_heartbeats ADD COLUMN display_name TEXT")
@@ -244,6 +246,65 @@ DEFAULT_CREATOR_GROUPS = [
         ("youtube", "yugi2xlive"),
     ]),
 ]
+
+
+_LEGACY_ACCOUNT_HANDLE_COLS = (
+    ("twitch", "twitch_user"),
+    ("youtube", "youtube_user"),
+    ("x", "x_user"),
+    ("facebook", "facebook_user"),
+    ("instagram", "instagram_user"),
+    ("plex", "plex_user"),
+)
+
+
+def _migrate_account_handles_to_table(conn):
+    """Move per-platform handle columns off `user_accounts` into
+    `user_account_handles` rows, then rebuild `user_accounts` without them.
+
+    Idempotent: only runs when legacy columns still exist. Runs after the
+    user_account_handles table has already been created by init_db().
+    """
+    rows = conn.execute(
+        "SELECT id, label, twitch_user, youtube_user, x_user, "
+        "facebook_user, instagram_user, plex_user FROM user_accounts"
+    ).fetchall()
+    for row in rows:
+        for platform, col in _LEGACY_ACCOUNT_HANDLE_COLS:
+            handle = row[col]
+            if not handle:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO user_account_handles "
+                "(account_id, platform, handle) VALUES (?, ?, ?)",
+                (row["id"], platform, handle.lower()),
+            )
+    # Rebuild user_accounts without the handle columns. Preserve id + label,
+    # dedupe label collisions by suffixing with " ({id})" if needed.
+    existing_labels = set()
+    label_map = {}
+    for row in rows:
+        base = row["label"]
+        label = base
+        n = 2
+        while label in existing_labels:
+            label = f"{base} ({n})"
+            n += 1
+        existing_labels.add(label)
+        label_map[row["id"]] = label
+    conn.execute("""
+        CREATE TABLE user_accounts_new (
+            id     INTEGER PRIMARY KEY,
+            label  TEXT NOT NULL UNIQUE
+        )
+    """)
+    for row in rows:
+        conn.execute(
+            "INSERT INTO user_accounts_new (id, label) VALUES (?, ?)",
+            (row["id"], label_map[row["id"]]),
+        )
+    conn.execute("DROP TABLE user_accounts")
+    conn.execute("ALTER TABLE user_accounts_new RENAME TO user_accounts")
 
 
 def _seed_default_creators(conn):
@@ -391,15 +452,16 @@ def init_db():
                 VALUES (1, NULL, NULL, 1);
             CREATE TABLE IF NOT EXISTS user_accounts (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                label           TEXT NOT NULL,
-                twitch_user     TEXT,
-                youtube_user    TEXT,
-                x_user          TEXT,
-                facebook_user   TEXT,
-                instagram_user  TEXT,
-                plex_user       TEXT,
-                UNIQUE(twitch_user, youtube_user)
+                label           TEXT NOT NULL UNIQUE
             );
+            CREATE TABLE IF NOT EXISTS user_account_handles (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id  INTEGER NOT NULL REFERENCES user_accounts(id) ON DELETE CASCADE,
+                platform    TEXT NOT NULL,
+                handle      TEXT NOT NULL,
+                UNIQUE(platform, handle)
+            );
+            CREATE INDEX IF NOT EXISTS idx_uah_account ON user_account_handles(account_id);
         """)
         migrate_db(conn)
         conn.commit()
@@ -409,6 +471,7 @@ def init_db():
 def db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
         conn.commit()
@@ -1206,39 +1269,80 @@ USER_ACCOUNT_PLATFORMS = (
 )
 
 
-def _account_row_to_dict(r):
-    return {
-        "id": r["id"],
-        "label": r["label"],
-        "twitch_user": r["twitch_user"],
-        "youtube_user": r["youtube_user"],
-        "x_user": r["x_user"],
-        "facebook_user": r["facebook_user"],
-        "instagram_user": r["instagram_user"],
-        "plex_user": r["plex_user"],
+def _load_account_handles(conn):
+    """Return {account_id: [{'id','platform','handle'}, ...]}."""
+    out = {}
+    for r in conn.execute(
+        "SELECT id, account_id, platform, handle FROM user_account_handles "
+        "ORDER BY account_id, platform, id"
+    ):
+        out.setdefault(r["account_id"], []).append({
+            "id": r["id"],
+            "platform": r["platform"],
+            "handle": r["handle"],
+        })
+    return out
+
+
+def _account_to_dict(row, handles):
+    """Build the response shape. Includes `handles` list plus legacy
+    <platform>_user fields (first handle each) for existing clients."""
+    per_platform = {}
+    for h in handles:
+        per_platform.setdefault(h["platform"], []).append(h["handle"])
+    d = {
+        "id": row["id"],
+        "label": row["label"],
+        "handles": handles,
     }
+    for platform, col in USER_ACCOUNT_PLATFORMS:
+        vals = per_platform.get(platform, [])
+        d[col] = vals[0] if vals else None
+    return d
 
 
 @app.get("/settings/user-accounts", dependencies=[Depends(require_api_key)])
 def get_user_accounts():
     with db() as conn:
-        rows = conn.execute(
-            "SELECT id, label, twitch_user, youtube_user, x_user, "
-            "facebook_user, instagram_user, plex_user "
-            "FROM user_accounts ORDER BY id"
-        ).fetchall()
-    return {"accounts": [_account_row_to_dict(r) for r in rows]}
+        rows = conn.execute("SELECT id, label FROM user_accounts ORDER BY id").fetchall()
+        handles_by_acct = _load_account_handles(conn)
+    return {"accounts": [
+        _account_to_dict(r, handles_by_acct.get(r["id"], []))
+        for r in rows
+    ]}
+
+
+def _insert_handle(conn, account_id: int, platform: str, handle: str):
+    """Insert one handle. Returns 'added' | 'exists_same' | 'exists_other'.
+
+    'exists_same': already linked to this account, no-op.
+    'exists_other': handle owned by a different account; not moved.
+    """
+    try:
+        conn.execute(
+            "INSERT INTO user_account_handles (account_id, platform, handle) "
+            "VALUES (?, ?, ?)",
+            (account_id, platform, handle),
+        )
+        return "added"
+    except sqlite3.IntegrityError:
+        row = conn.execute(
+            "SELECT account_id FROM user_account_handles "
+            "WHERE platform = ? AND handle = ?",
+            (platform, handle),
+        ).fetchone()
+        return "exists_same" if row and row["account_id"] == account_id else "exists_other"
 
 
 @app.post("/settings/user-accounts", dependencies=[Depends(require_api_key)])
 def add_user_account(account: UserAccount):
     handles = {
-        "twitch_user": account.twitch_user.lower() if account.twitch_user else None,
-        "youtube_user": account.youtube_user.lower() if account.youtube_user else None,
-        "x_user": account.x_user.lower() if account.x_user else None,
-        "facebook_user": account.facebook_user.lower() if account.facebook_user else None,
-        "instagram_user": account.instagram_user.lower() if account.instagram_user else None,
-        "plex_user": account.plex_user.lower() if account.plex_user else None,
+        "twitch": account.twitch_user.lower() if account.twitch_user else None,
+        "youtube": account.youtube_user.lower() if account.youtube_user else None,
+        "x": account.x_user.lower() if account.x_user else None,
+        "facebook": account.facebook_user.lower() if account.facebook_user else None,
+        "instagram": account.instagram_user.lower() if account.instagram_user else None,
+        "plex": account.plex_user.lower() if account.plex_user else None,
     }
     if not any(handles.values()):
         raise HTTPException(
@@ -1247,43 +1351,23 @@ def add_user_account(account: UserAccount):
         )
     with db() as conn:
         existing = conn.execute(
-            "SELECT id, twitch_user, youtube_user, x_user, facebook_user, "
-            "instagram_user, plex_user FROM user_accounts WHERE label = ?",
-            (account.label,),
+            "SELECT id FROM user_accounts WHERE label = ?", (account.label,),
         ).fetchone()
         if existing:
-            merged = {
-                col: (handles[col] if handles[col] is not None else existing[col])
-                for col in handles
-            }
-            conn.execute(
-                "UPDATE user_accounts SET twitch_user = ?, youtube_user = ?, "
-                "x_user = ?, facebook_user = ?, instagram_user = ?, plex_user = ? "
-                "WHERE id = ?",
-                (
-                    merged["twitch_user"], merged["youtube_user"],
-                    merged["x_user"], merged["facebook_user"],
-                    merged["instagram_user"], merged["plex_user"],
-                    existing["id"],
-                ),
+            account_id = existing["id"]
+        else:
+            cur = conn.execute(
+                "INSERT INTO user_accounts (label) VALUES (?)", (account.label,),
             )
-            return {"ok": True, "id": existing["id"]}
-        cols = ["label"] + list(handles.keys())
-        vals = [account.label] + list(handles.values())
-        placeholders = ",".join("?" * len(cols))
-        try:
-            cursor = conn.execute(
-                f"INSERT INTO user_accounts ({','.join(cols)}) VALUES ({placeholders})",
-                vals,
-            )
-            account_id = cursor.lastrowid
-        except sqlite3.IntegrityError:
-            row = conn.execute(
-                "SELECT id FROM user_accounts WHERE twitch_user IS ? AND youtube_user IS ?",
-                (handles["twitch_user"], handles["youtube_user"]),
-            ).fetchone()
-            account_id = row["id"]
-    return {"ok": True, "id": account_id}
+            account_id = cur.lastrowid
+        conflicts = []
+        for platform, handle in handles.items():
+            if not handle:
+                continue
+            status = _insert_handle(conn, account_id, platform, handle)
+            if status == "exists_other":
+                conflicts.append({"platform": platform, "handle": handle})
+    return {"ok": True, "id": account_id, "conflicts": conflicts}
 
 
 @app.delete("/settings/user-accounts/{account_id}", dependencies=[Depends(require_api_key)])
@@ -1295,12 +1379,24 @@ def delete_user_account(account_id: int):
     return {"ok": True}
 
 
+@app.delete("/settings/user-accounts/handles/{handle_id}",
+            dependencies=[Depends(require_api_key)])
+def delete_user_account_handle(handle_id: int):
+    with db() as conn:
+        cur = conn.execute(
+            "DELETE FROM user_account_handles WHERE id = ?", (handle_id,),
+        )
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="handle not found")
+    return {"ok": True}
+
+
 @app.post("/settings/user-accounts/auto-link", dependencies=[Depends(require_api_key)])
 def auto_link_user_accounts():
     """
     Detect Twitch+YouTube account pairs that came from the same Chrome extension
     install (same client_id) and add them to user_accounts. Idempotent — pairs
-    already linked are skipped via UNIQUE constraint.
+    already linked are skipped.
     """
     with db() as conn:
         pairs = conn.execute("""
@@ -1315,13 +1411,22 @@ def auto_link_user_accounts():
         for row in pairs:
             tw = row["twitch_user"]
             yt = row["youtube_user"]
-            try:
-                conn.execute(
-                    "INSERT INTO user_accounts (label, twitch_user, youtube_user) VALUES (?, ?, ?)",
-                    (f"Auto: {tw} / {yt}", tw, yt),
+            label = f"Auto: {tw} / {yt}"
+            existing = conn.execute(
+                "SELECT id FROM user_accounts WHERE label = ?", (label,),
+            ).fetchone()
+            if existing:
+                account_id = existing["id"]
+            else:
+                cur = conn.execute(
+                    "INSERT INTO user_accounts (label) VALUES (?)", (label,),
                 )
+                account_id = cur.lastrowid
+            tw_status = _insert_handle(conn, account_id, "twitch", tw)
+            yt_status = _insert_handle(conn, account_id, "youtube", yt)
+            if tw_status == "added" or yt_status == "added":
                 created += 1
-            except sqlite3.IntegrityError:
+            else:
                 skipped += 1
     return {"ok": True, "created": created, "skipped": skipped, "total_pairs": len(pairs)}
 
@@ -1773,18 +1878,27 @@ def stats_recent(limit: int = 5, user: Optional[str] = None):
 
 # ---------- Helpers ----------
 
-def _user_clause(user: Optional[str]):
-    """
-    Build a (sql_fragment, params) tuple for the twitch_user filter.
-    - None -> ('', ()) means no filter.
-    - 'anonymous' -> ('AND twitch_user IS NULL', ())
-    - other -> ('AND twitch_user = ?', (value,))
+def _build_user_clause(col: str, user):
+    """Filter fragment for a *_user column.
+
+    Accepts: None -> no filter; 'anonymous' -> IS NULL; str -> equality;
+    list/tuple -> IN(...) (empty list == no filter).
     """
     if user is None:
         return "", ()
+    if isinstance(user, (list, tuple)):
+        vals = [v for v in user if v]
+        if not vals:
+            return "", ()
+        placeholders = ",".join("?" for _ in vals)
+        return f"AND {col} IN ({placeholders})", tuple(vals)
     if user == "anonymous":
-        return "AND twitch_user IS NULL", ()
-    return "AND twitch_user = ?", (user,)
+        return f"AND {col} IS NULL", ()
+    return f"AND {col} = ?", (user,)
+
+
+def _user_clause(user):
+    return _build_user_clause("twitch_user", user)
 
 
 def _stats_since(since: int, include_passive: bool, user: Optional[str] = None):
@@ -1827,12 +1941,8 @@ def _local_midnight() -> int:
     return int(time.mktime(midnight_struct))
 
 
-def _yt_user_clause(user: Optional[str]):
-    if user is None:
-        return "", ()
-    if user == "anonymous":
-        return "AND youtube_user IS NULL", ()
-    return "AND youtube_user = ?", (user,)
+def _yt_user_clause(user):
+    return _build_user_clause("youtube_user", user)
 
 
 def _platform_channel_seconds(conn, since, users, include_passive=True):
@@ -1887,12 +1997,8 @@ def _media_display_names(conn, platform: Optional[str] = None):
     return {r["channel"]: r["display_name"] for r in rows}
 
 
-def _media_user_clause(user: Optional[str]):
-    if user is None:
-        return "", ()
-    if user == "anonymous":
-        return "AND media_user IS NULL", ()
-    return "AND media_user = ?", (user,)
+def _media_user_clause(user):
+    return _build_user_clause("media_user", user)
 
 
 def _media_stats_since(platform: str, since: int, include_passive: bool, user: Optional[str] = None):
@@ -1921,28 +2027,35 @@ def _media_stats_since(platform: str, since: int, include_passive: bool, user: O
 
 
 def _resolve_user_handles(conn, label: Optional[str]):
-    """Look up a user_accounts label and return per-platform handles.
+    """Look up a user_accounts label and return per-platform handle lists.
 
     Returns dict keyed by platform ('twitch', 'youtube', 'x', 'facebook',
-    'instagram', 'plex'); values are the handle or None. All-None when
-    label is None (= all accounts). Raises 404 if label not found.
+    'instagram', 'plex'); values are a list of handles or None. None means
+    'no filter' — either label is None (all accounts) or that platform has
+    no handles on this account. Raises 404 if label not found.
     """
     empty = {p: None for p, _ in USER_ACCOUNT_PLATFORMS}
     if label is None:
         return empty
     row = conn.execute(
-        "SELECT twitch_user, youtube_user, x_user, facebook_user, "
-        "instagram_user, plex_user FROM user_accounts WHERE label = ?",
-        (label,),
+        "SELECT id FROM user_accounts WHERE label = ?", (label,),
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail=f"Merged account '{label}' not found")
-    return {platform: row[col] for platform, col in USER_ACCOUNT_PLATFORMS}
+    handles = {p: [] for p, _ in USER_ACCOUNT_PLATFORMS}
+    for h in conn.execute(
+        "SELECT platform, handle FROM user_account_handles WHERE account_id = ?",
+        (row["id"],),
+    ):
+        if h["platform"] in handles:
+            handles[h["platform"]].append(h["handle"])
+    return {p: (v if v else None) for p, v in handles.items()}
 
 
 def _resolve_merged_user(conn, label: Optional[str]):
-    """Backwards-compat tuple form of _resolve_user_handles for callers that
-    only consume the Twitch + YouTube handles."""
+    """Backwards-compat wrapper — returns (twitch_list, youtube_list) or
+    (None, None). Both may be lists when an account has multiple handles on
+    a platform."""
     handles = _resolve_user_handles(conn, label)
     return handles["twitch"], handles["youtube"]
 
@@ -1985,10 +2098,8 @@ EXPORT_TABLES = {
     "channel_links": ["id", "twitch_channel", "youtube_channel"],
     "creator_groups": ["id", "label"],
     "creator_aliases": ["id", "group_id", "platform", "channel"],
-    "user_accounts": [
-        "id", "label", "twitch_user", "youtube_user",
-        "x_user", "facebook_user", "instagram_user", "plex_user",
-    ],
+    "user_accounts": ["id", "label"],
+    "user_account_handles": ["id", "account_id", "platform", "handle"],
 }
 
 

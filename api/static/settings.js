@@ -89,14 +89,10 @@ async function loadCreators() {
   });
 }
 
-const ACCOUNT_FIELDS = [
-  { key: "twitch_user", badge: "TW" },
-  { key: "youtube_user", badge: "YT" },
-  { key: "x_user", badge: "X" },
-  { key: "facebook_user", badge: "FB" },
-  { key: "instagram_user", badge: "IG" },
-  { key: "plex_user", badge: "PLEX" },
-];
+const PLATFORM_BADGE_ACCOUNT = {
+  twitch: "TW", youtube: "YT", x: "X",
+  facebook: "FB", instagram: "IG", plex: "PLEX",
+};
 
 async function loadAccounts() {
   const { accounts } = await apiReq("GET", "/settings/user-accounts");
@@ -106,18 +102,24 @@ async function loadAccounts() {
     return;
   }
   tbody.innerHTML = accounts.map(a => {
-    const chips = ACCOUNT_FIELDS
-      .filter(f => a[f.key])
-      .map(f => `<span class="platform-badge" style="margin-right:6px">${f.badge}</span>${escapeHtml(a[f.key])}`)
-      .join("<br>");
+    const chips = (a.handles || []).map(h => `
+      <span class="platform-badge ${h.platform}" style="margin-right:6px">${PLATFORM_BADGE_ACCOUNT[h.platform] || h.platform}</span>${escapeHtml(h.handle)}
+      <button class="del-btn" data-handle="${h.id}" title="Remove handle" aria-label="Remove handle" style="padding:1px 6px;margin:0 10px 4px 4px">×</button>
+    `).join("<br>");
     return `
       <tr>
         <td>${escapeHtml(a.label)}</td>
         <td>${chips || '<span style="color:var(--muted)">—</span>'}</td>
-        <td><button class="del-acct-btn" data-id="${a.id}">Delete</button></td>
+        <td><button class="del-acct-btn" data-id="${a.id}" title="Delete account" aria-label="Delete account" style="padding:1px 8px;font-size:16px;line-height:1">×</button></td>
       </tr>
     `;
   }).join("");
+  tbody.querySelectorAll(".del-btn[data-handle]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      await apiReq("DELETE", `/settings/user-accounts/handles/${btn.dataset.handle}`);
+      loadAccounts().catch(console.error);
+    });
+  });
   tbody.querySelectorAll(".del-acct-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
       await apiReq("DELETE", `/settings/user-accounts/${btn.dataset.id}`);
