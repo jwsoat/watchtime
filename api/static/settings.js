@@ -110,7 +110,7 @@ async function loadAccounts() {
       <tr>
         <td>${escapeHtml(a.label)}</td>
         <td>${chips || '<span style="color:var(--muted)">—</span>'}</td>
-        <td><button class="del-acct-btn" data-id="${a.id}" title="Delete account" aria-label="Delete account" style="padding:1px 8px;font-size:16px;line-height:1">×</button></td>
+        <td><button class="del-acct-btn" data-id="${a.id}">Delete</button></td>
       </tr>
     `;
   }).join("");
