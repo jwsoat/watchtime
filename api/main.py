@@ -403,6 +403,7 @@ def _create_creator_group(conn, desired_label):
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS heartbeats (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
