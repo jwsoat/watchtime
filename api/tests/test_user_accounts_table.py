@@ -20,4 +20,17 @@ def test_user_accounts_has_required_columns():
         cols = {r[1] for r in conn.execute("PRAGMA table_info(user_accounts)")}
     finally:
         conn.close()
-    assert cols >= {"id", "label", "twitch_user", "youtube_user"}
+    assert cols == {"id", "label"}
+
+
+def test_user_account_handles_table_exists():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        tables = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )}
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(user_account_handles)")}
+    finally:
+        conn.close()
+    assert "user_account_handles" in tables
+    assert cols >= {"id", "account_id", "platform", "handle"}

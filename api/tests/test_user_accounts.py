@@ -1,6 +1,13 @@
 """Tests for /settings/user-accounts CRUD."""
 
 
+def _handles_by_platform(account):
+    out = {}
+    for h in account.get("handles", []):
+        out.setdefault(h["platform"], []).append(h["handle"])
+    return out
+
+
 def test_get_accounts_empty(client, auth_headers):
     res = client.get("/settings/user-accounts", headers=auth_headers)
     assert res.json() == {"accounts": []}
@@ -17,8 +24,9 @@ def test_add_account_with_both_platforms(client, auth_headers):
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
     assert len(accounts) == 1
     assert accounts[0]["label"] == "Me"
-    assert accounts[0]["twitch_user"] == "jwsoat"
-    assert accounts[0]["youtube_user"] == "jwsoatvideo"
+    handles = _handles_by_platform(accounts[0])
+    assert handles["twitch"] == ["jwsoat"]
+    assert handles["youtube"] == ["jwsoatvideo"]
 
 
 def test_add_account_twitch_only(client, auth_headers):
@@ -29,8 +37,8 @@ def test_add_account_twitch_only(client, auth_headers):
     )
     assert res.status_code == 200
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
-    assert accounts[0]["twitch_user"] == "alice"
-    assert accounts[0]["youtube_user"] is None
+    handles = _handles_by_platform(accounts[0])
+    assert handles == {"twitch": ["alice"]}
 
 
 def test_add_account_youtube_only(client, auth_headers):
@@ -41,8 +49,8 @@ def test_add_account_youtube_only(client, auth_headers):
     )
     assert res.status_code == 200
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
-    assert accounts[0]["twitch_user"] is None
-    assert accounts[0]["youtube_user"] == "bob"
+    handles = _handles_by_platform(accounts[0])
+    assert handles == {"youtube": ["bob"]}
 
 
 def test_add_account_requires_at_least_one_platform(client, auth_headers):
@@ -72,6 +80,8 @@ def test_add_duplicate_account_is_idempotent(client, auth_headers):
     assert r1.json()["id"] == r2.json()["id"]
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
     assert len(accounts) == 1
+    handles = _handles_by_platform(accounts[0])
+    assert handles == {"twitch": ["jwsoat"], "youtube": ["jwsoatvideo"]}
 
 
 def test_delete_account(client, auth_headers):
@@ -106,24 +116,25 @@ def test_resubmit_same_label_merges_new_handles(client, auth_headers):
     assert r1.json()["id"] == r2.json()["id"]
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
     assert len(accounts) == 1
-    assert accounts[0]["twitch_user"] == "jwsoat"
-    assert accounts[0]["plex_user"] == "alice"
+    handles = _handles_by_platform(accounts[0])
+    assert handles == {"twitch": ["jwsoat"], "plex": ["alice"]}
 
 
-def test_resubmit_same_label_overwrites_existing_handle(client, auth_headers):
+def test_resubmit_same_label_appends_second_handle_on_same_platform(client, auth_headers):
     client.post(
         "/settings/user-accounts",
-        json={"label": "Me", "plex_user": "old"},
+        json={"label": "Me", "twitch_user": "primary"},
         headers=auth_headers,
     )
     client.post(
         "/settings/user-accounts",
-        json={"label": "Me", "plex_user": "new"},
+        json={"label": "Me", "twitch_user": "alt"},
         headers=auth_headers,
     )
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
     assert len(accounts) == 1
-    assert accounts[0]["plex_user"] == "new"
+    handles = _handles_by_platform(accounts[0])
+    assert sorted(handles["twitch"]) == ["alt", "primary"]
 
 
 def test_resubmit_blank_field_preserves_existing(client, auth_headers):
@@ -139,9 +150,49 @@ def test_resubmit_blank_field_preserves_existing(client, auth_headers):
     )
     accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
     assert len(accounts) == 1
-    assert accounts[0]["twitch_user"] == "jw"
-    assert accounts[0]["plex_user"] == "alice"
-    assert accounts[0]["youtube_user"] == "jwyt"
+    handles = _handles_by_platform(accounts[0])
+    assert handles == {
+        "twitch": ["jw"],
+        "plex": ["alice"],
+        "youtube": ["jwyt"],
+    }
+
+
+def test_delete_individual_handle(client, auth_headers):
+    client.post(
+        "/settings/user-accounts",
+        json={"label": "Me", "twitch_user": "a", "youtube_user": "b"},
+        headers=auth_headers,
+    )
+    accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
+    handle_ids = {h["platform"]: h["id"] for h in accounts[0]["handles"]}
+    res = client.delete(
+        f"/settings/user-accounts/handles/{handle_ids['twitch']}",
+        headers=auth_headers,
+    )
+    assert res.json() == {"ok": True}
+    accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
+    handles = _handles_by_platform(accounts[0])
+    assert handles == {"youtube": ["b"]}
+
+
+def test_handle_uniqueness_across_accounts(client, auth_headers):
+    client.post(
+        "/settings/user-accounts",
+        json={"label": "A", "twitch_user": "shared"},
+        headers=auth_headers,
+    )
+    r = client.post(
+        "/settings/user-accounts",
+        json={"label": "B", "twitch_user": "shared"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["conflicts"] == [{"platform": "twitch", "handle": "shared"}]
+    accounts = client.get("/settings/user-accounts", headers=auth_headers).json()["accounts"]
+    handles_by_label = {a["label"]: _handles_by_platform(a) for a in accounts}
+    assert handles_by_label["A"] == {"twitch": ["shared"]}
+    assert handles_by_label.get("B", {}) == {}
 
 
 def test_user_accounts_require_auth(client):
@@ -151,3 +202,4 @@ def test_user_accounts_require_auth(client):
         json={"label": "Me", "twitch_user": "x"},
     ).status_code == 401
     assert client.delete("/settings/user-accounts/1").status_code == 401
+    assert client.delete("/settings/user-accounts/handles/1").status_code == 401
