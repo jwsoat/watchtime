@@ -31,7 +31,7 @@ HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "60"))
 # Additional "generic" video sources stored in one table with a platform
 # discriminator. X/Twitter, Facebook and Instagram are tracked by the browser
 # extension; Plex is tracked server-side by polling a Plex Media Server.
-MEDIA_PLATFORMS = {"x", "facebook", "instagram", "plex"}
+MEDIA_PLATFORMS = {"x", "facebook", "instagram", "plex", "tiktok"}
 
 app = FastAPI(title="Twitch Watch Time API", version="0.1.0")
 
@@ -107,6 +107,11 @@ def plex_page():
     return _serve_html(STATIC_DIR / "media.html")
 
 
+@app.get("/tiktok", include_in_schema=False)
+def tiktok_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page():
     return _serve_html(STATIC_DIR / "settings.html")
@@ -115,7 +120,59 @@ def settings_page():
 # ---------- DB ----------
 
 # All platforms that can participate in cross-platform creator linking.
-ALL_PLATFORMS = ("twitch", "youtube", "x", "facebook", "instagram", "plex")
+ALL_PLATFORMS = ("twitch", "youtube", "x", "facebook", "instagram", "plex", "tiktok")
+
+
+def _ensure_platform_checks(conn):
+    """Rebuild media_heartbeats / creator_aliases when their CHECK(platform IN
+    ...) constraint predates the tiktok platform. SQLite cannot ALTER a CHECK
+    constraint, so the table is rebuilt (create *_new, INSERT SELECT, drop,
+    rename, recreate indexes — old indexes drop with the table). Idempotent:
+    reads the stored CREATE sql from sqlite_master and looks for 'tiktok' as
+    the sentinel. Uses positional row access so it works with either
+    row_factory."""
+    specs = [
+        ("media_heartbeats", "CREATE TABLE media_heartbeats_new (\n"
+         "                id           INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+         "                ts           INTEGER NOT NULL,\n"
+         "                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex','tiktok')),\n"
+         "                channel      TEXT    NOT NULL,\n"
+         "                title        TEXT,\n"
+         "                video_id     TEXT,\n"
+         "                state        TEXT    NOT NULL CHECK(state IN ('active','passive')),\n"
+         "                tab_visible  INTEGER NOT NULL CHECK(tab_visible IN (0,1)),\n"
+         "                media_user   TEXT,\n"
+         "                display_name TEXT,\n"
+         "                client_id    TEXT    NOT NULL\n"
+         "            )",
+         ["CREATE INDEX IF NOT EXISTS idx_media_platform_ts ON media_heartbeats(platform, ts)",
+          "CREATE INDEX IF NOT EXISTS idx_media_platform_channel_ts ON media_heartbeats(platform, channel, ts)"]),
+        ("creator_aliases", "CREATE TABLE creator_aliases_new (\n"
+         "                id       INTEGER PRIMARY KEY AUTOINCREMENT,\n"
+         "                group_id INTEGER NOT NULL,\n"
+         "                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex','tiktok')),\n"
+         "                channel  TEXT NOT NULL,\n"
+         "                UNIQUE(platform, channel)\n"
+         "            )",
+         ["CREATE INDEX IF NOT EXISTS idx_creator_aliases_group ON creator_aliases(group_id)"]),
+    ]
+    for table, create_sql, index_sqls in specs:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if not row or "'tiktok'" in (row[0] or ""):
+            continue
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+        conn.execute(create_sql)
+        conn.execute(
+            f"INSERT INTO {table}_new ({', '.join(cols)}) "
+            f"SELECT {', '.join(cols)} FROM {table}"
+        )
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute(f"ALTER TABLE {table}_new RENAME TO {table}")
+        for idx in index_sqls:
+            conn.execute(idx)
 
 
 def migrate_db(conn):
@@ -158,6 +215,7 @@ def migrate_db(conn):
                 "UPDATE home_assistant_config SET base_url = ?, token = ? WHERE id = 1",
                 (env_url, env_token),
             )
+    _ensure_platform_checks(conn)
     _seed_default_ha_entity_users(conn)
     _migrate_channel_links_to_creators(conn)
     _seed_default_creators(conn)
@@ -443,7 +501,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS media_heartbeats (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 ts           INTEGER NOT NULL,
-                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex')),
+                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex','tiktok')),
                 channel      TEXT    NOT NULL,
                 title        TEXT,
                 video_id     TEXT,
@@ -470,7 +528,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS creator_aliases (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_id INTEGER NOT NULL,
-                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex')),
+                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex','tiktok')),
                 channel  TEXT NOT NULL,
                 UNIQUE(platform, channel)
             );
@@ -575,7 +633,7 @@ class YoutubeHeartbeatBatch(BaseModel):
 
 class MediaHeartbeat(BaseModel):
     ts: int = Field(..., description="Unix seconds, UTC")
-    platform: str = Field(..., pattern="^(x|facebook|instagram|plex)$")
+    platform: str = Field(..., pattern="^(x|facebook|instagram|plex|tiktok)$")
     channel: str = Field(..., min_length=1, max_length=128)
     title: Optional[str] = Field(default=None, max_length=512)
     video_id: Optional[str] = Field(default=None, max_length=128)
@@ -681,6 +739,7 @@ _AVATAR_PROVIDERS = {
     "x": "twitter",
     "facebook": "facebook",
     "instagram": "instagram",
+    "tiktok": "tiktok",
 }
 
 

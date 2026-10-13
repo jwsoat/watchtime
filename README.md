@@ -11,7 +11,7 @@ Live at **stats.jwsoat.co.nz**.
 ## How it works
 
 The extension runs a heartbeat timer on twitch.tv, youtube.com, x.com,
-facebook.com and instagram.com pages. Every tick (~10s), if a video is playing,
+facebook.com, instagram.com and tiktok.com pages. Every tick (~10s), if a video is playing,
 it records:
 
 - channel name
@@ -36,13 +36,13 @@ Four views behind an API key gate:
 | `/` | **Merged** — combined Twitch + YouTube rankings, daily chart, quick stats |
 | `/twitch` | Twitch-only — channels, categories, daily chart |
 | `/youtube` | YouTube-only — channels, videos, daily chart |
-| `/x` `/facebook` `/instagram` `/plex` | Per-source — top accounts, top videos, daily chart |
+| `/x` `/facebook` `/instagram` `/tiktok` `/plex` | Per-source — top accounts, top videos, daily chart |
 | `/tv` | Ambient scoreboard with rotating panels (point a spare display here) |
 | `/settings` | Accounts, channel links, avatars, data management, Google Drive backup |
 
 **Merged view** ranks creators across **all** platforms in two columns (odd
 ranks left, even right, up to 40 total). Platform badges (TW/YT/X/FB/IG/PLEX)
-indicate source. Channels linked as the same creator (see **Creator links** in
+indicate source (TW/YT/X/FB/IG/TT/PLEX). Channels linked as the same creator (see **Creator links** in
 Settings) roll up into a single combined row — e.g. watching the same creator on
 YouTube and Plex counts as one.
 
@@ -96,7 +96,7 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | POST | `/heartbeat` | Single Twitch heartbeat |
 | POST | `/heartbeats` | Batched Twitch heartbeats |
 | POST | `/youtube/heartbeats` | Batched YouTube heartbeats |
-| POST | `/media/heartbeats` | Batched heartbeats for x / facebook / instagram / plex (each carries its own `platform`) |
+| POST | `/media/heartbeats` | Batched heartbeats for x / facebook / instagram / tiktok / plex (each carries its own `platform`) |
 
 ### Twitch stats
 
@@ -130,9 +130,9 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | GET | `/stats/youtube/playlists` | Playlist stats |
 | GET | `/stats/youtube/users` | Known YouTube users |
 
-### Other sources (X, Facebook, Instagram, Plex)
+### Other sources (X, Facebook, Instagram, TikTok, Plex)
 
-`{platform}` is one of `x`, `facebook`, `instagram`, `plex`.
+`{platform}` is one of `x`, `facebook`, `instagram`, `tiktok`, `plex`.
 
 | Method | Path | Notes |
 |--------|------|-------|

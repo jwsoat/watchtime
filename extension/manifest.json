@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Watchtime Logger",
-  "version": "0.4.0",
-  "description": "Logs Twitch, YouTube, X, Facebook and Instagram watch time to your own backend.",
+  "version": "0.5.0",
+  "description": "Logs Twitch, YouTube, X, Facebook, Instagram and TikTok watch time to your own backend.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
     "https://www.twitch.tv/*",
@@ -13,7 +13,10 @@
     "https://x.com/*",
     "https://twitter.com/*",
     "https://www.facebook.com/*",
-    "https://www.instagram.com/*"
+    "https://www.instagram.com/*",
+    "https://www.tiktok.com/*",
+    "http://127.0.0.1:8765/*",
+    "http://192.168.1.119:8765/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -52,6 +55,11 @@
     {
       "matches": ["https://www.instagram.com/*"],
       "js": ["instagram-content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.tiktok.com/*"],
+      "js": ["tiktok-content.js"],
       "run_at": "document_idle"
     }
   ],

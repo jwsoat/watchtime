@@ -55,7 +55,7 @@ $("gate-input").addEventListener("keydown", (e) => {
 
 const PLATFORM_BADGE = {
   twitch: "TW", youtube: "YT", x: "X",
-  facebook: "FB", instagram: "IG", plex: "PLEX",
+  facebook: "FB", instagram: "IG", plex: "PLEX", tiktok: "TT",
 };
 
 async function loadCreators() {
@@ -91,7 +91,7 @@ async function loadCreators() {
 
 const PLATFORM_BADGE_ACCOUNT = {
   twitch: "TW", youtube: "YT", x: "X",
-  facebook: "FB", instagram: "IG", plex: "PLEX",
+  facebook: "FB", instagram: "IG", plex: "PLEX", tiktok: "TT",
 };
 
 async function loadAccounts() {
