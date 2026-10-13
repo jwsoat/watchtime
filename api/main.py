@@ -143,6 +143,11 @@ def migrate_db(conn):
                 "UPDATE plex_config SET base_url = ?, token = ?, channel_from_studio = ? WHERE id = 1",
                 (env_url, env_token, studio),
             )
+    # home_assistant_config gained api_key (YouTube Data API key used by the
+    # HA poller to resolve display names to @handles).
+    ha_cols = {row[1] for row in conn.execute("PRAGMA table_info(home_assistant_config)")}
+    if "api_key" not in ha_cols:
+        conn.execute("ALTER TABLE home_assistant_config ADD COLUMN api_key TEXT")
     # One-time seed of home_assistant_config from env vars when present.
     cur = conn.execute("SELECT base_url, token FROM home_assistant_config WHERE id = 1").fetchone()
     if cur and not cur[0] and not cur[1]:
@@ -482,10 +487,16 @@ def init_db():
             CREATE TABLE IF NOT EXISTS home_assistant_config (
                 id        INTEGER PRIMARY KEY CHECK (id = 1),
                 base_url  TEXT,
-                token     TEXT
+                token     TEXT,
+                api_key   TEXT
             );
             INSERT OR IGNORE INTO home_assistant_config (id, base_url, token)
                 VALUES (1, NULL, NULL);
+            CREATE TABLE IF NOT EXISTS youtube_channel_handles (
+                display_name TEXT PRIMARY KEY,
+                handle       TEXT,
+                resolved_at  INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS home_assistant_entity_users (
                 entity_id     TEXT PRIMARY KEY,
                 youtube_user  TEXT NOT NULL
@@ -603,6 +614,7 @@ class PlexConfig(BaseModel):
 class HomeAssistantConfig(BaseModel):
     base_url: Optional[str] = Field(default=None, max_length=512)
     token: Optional[str] = Field(default=None, max_length=2048)
+    api_key: Optional[str] = Field(default=None, max_length=256)
 
 
 class HomeAssistantEntityUser(BaseModel):
@@ -1147,35 +1159,50 @@ def clear_plex_config():
 
 @app.get("/settings/home-assistant", dependencies=[Depends(require_api_key)])
 def get_home_assistant_config():
-    """Return current Home Assistant config. Token is masked (presence only)."""
+    """Return current Home Assistant config. Token and YouTube API key are
+    masked (presence only)."""
     with db() as conn:
         row = conn.execute(
-            "SELECT base_url, token FROM home_assistant_config WHERE id = 1"
+            "SELECT base_url, token, api_key FROM home_assistant_config WHERE id = 1"
         ).fetchone()
     base_url = row["base_url"] if row else None
     token = row["token"] if row else None
     return {
         "base_url": base_url or "",
         "has_token": bool(token),
+        "has_api_key": bool(row["api_key"]) if row else False,
         "configured": bool(base_url and token),
     }
 
 
 @app.put("/settings/home-assistant", dependencies=[Depends(require_api_key)])
 def put_home_assistant_config(cfg: HomeAssistantConfig):
-    """Update Home Assistant config. Empty token preserves the stored one."""
+    """Update Home Assistant config. Empty token / api_key preserves the
+    stored one."""
     base_url = (cfg.base_url or "").strip().rstrip("/") or None
     new_token = (cfg.token or "").strip() or None
+    new_api_key = (cfg.api_key or "").strip() or None
     with db() as conn:
-        if new_token is None:
+        if new_token is None and new_api_key is None:
             conn.execute(
                 "UPDATE home_assistant_config SET base_url = ? WHERE id = 1",
                 (base_url,),
             )
-        else:
+        elif new_token is None:
+            conn.execute(
+                "UPDATE home_assistant_config SET base_url = ?, api_key = ? WHERE id = 1",
+                (base_url, new_api_key),
+            )
+        elif new_api_key is None:
             conn.execute(
                 "UPDATE home_assistant_config SET base_url = ?, token = ? WHERE id = 1",
                 (base_url, new_token),
+            )
+        else:
+            conn.execute(
+                "UPDATE home_assistant_config SET base_url = ?, token = ?, api_key = ? "
+                "WHERE id = 1",
+                (base_url, new_token, new_api_key),
             )
     return {"ok": True}
 
@@ -1184,7 +1211,8 @@ def put_home_assistant_config(cfg: HomeAssistantConfig):
 def clear_home_assistant_config():
     with db() as conn:
         conn.execute(
-            "UPDATE home_assistant_config SET base_url = NULL, token = NULL WHERE id = 1"
+            "UPDATE home_assistant_config SET base_url = NULL, token = NULL, "
+            "api_key = NULL WHERE id = 1"
         )
     return {"ok": True}
 

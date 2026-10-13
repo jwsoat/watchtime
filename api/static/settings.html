@@ -215,6 +215,17 @@
           access tokens.
         </div>
       </div>
+      <div class="field" style="margin-bottom:12px">
+        <label for="ha-api-key" style="display:block;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.09em;margin-bottom:4px">YouTube Data API key (optional)</label>
+        <input id="ha-api-key" type="password" placeholder="leave blank to keep saved key" autocomplete="off" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px">
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">
+          Free. When set, Home Assistant sessions are credited to the channel's
+          YouTube @handle (e.g. <code>marktilbury</code>) instead of the display
+          name (e.g. "mark tilbury"), so they merge with browser-tracked
+          playback. Cached per channel; costs ~100 quota units per new channel,
+          once.
+        </div>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button id="ha-save-btn" type="button">Save</button>
         <button id="ha-test-btn" type="button">Test connection</button>
