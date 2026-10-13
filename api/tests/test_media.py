@@ -32,11 +32,25 @@ def test_media_ingest_stores_rows(client, auth_headers, db):
 def test_media_ingest_rejects_unknown_platform(client, auth_headers):
     now = int(time.time())
     body = {"heartbeats": [{
-        "ts": now, "platform": "tiktok", "channel": "a",
+        "ts": now, "platform": "notaplatform", "channel": "a",
         "state": "active", "tab_visible": True, "client_id": "c1",
     }]}
     res = client.post("/media/heartbeats", json=body, headers=auth_headers)
     assert res.status_code == 422
+
+
+def test_media_ingest_mobile_android(client, auth_headers, db):
+    now = int(time.time())
+    body = {"heartbeats": [{
+        "ts": now, "platform": "mobile-android", "channel": "TikTok",
+        "state": "active", "tab_visible": True, "client_id": "android-pixel9",
+    }]}
+    res = client.post("/media/heartbeats", json=body, headers=auth_headers)
+    assert res.status_code == 200
+    row = db.execute("SELECT * FROM media_heartbeats").fetchone()
+    assert row["platform"] == "mobile-android"
+    assert row["channel"] == "tiktok"  # lowercased
+    assert row["media_user"] is None
 
 
 def test_media_ingest_requires_auth(client):
@@ -69,7 +83,7 @@ def test_media_platforms_are_isolated(client, auth_headers, db):
 
 
 def test_media_unknown_platform_404(client, auth_headers):
-    assert client.get("/stats/media/tiktok/today", headers=auth_headers).status_code == 404
+    assert client.get("/stats/media/notaplatform/today", headers=auth_headers).status_code == 404
 
 
 def test_media_user_filter(client, auth_headers, db):

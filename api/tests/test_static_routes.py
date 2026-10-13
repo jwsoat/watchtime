@@ -44,6 +44,12 @@ def test_settings_returns_html(client):
     assert res.headers["content-type"].startswith("text/html")
 
 
+def test_mobile_android_returns_html(client):
+    res = client.get("/mobile-android")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/html")
+
+
 def test_media_pages_return_html(client):
     for path in ("/x", "/facebook", "/instagram", "/plex"):
         res = client.get(path)

@@ -18,6 +18,7 @@ const state = {
 const PLATFORM_BADGE = {
   twitch: "TW", youtube: "YT", x: "X",
   facebook: "FB", instagram: "IG", plex: "PLEX", tiktok: "TT",
+  "mobile-android": "DROID",
 };
 
 const $ = (id) => document.getElementById(id);
