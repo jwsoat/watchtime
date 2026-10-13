@@ -69,11 +69,30 @@ function getVideoInfo(video) {
     }
   }
 
-  // Title: description / og meta, fallback to document title.
+  // Title: the video's description text. Walk up from the video like the
+  // author search, then fall back to document-wide. document.title is
+  // deliberately NOT a fallback — on TikTok it's generic tab chrome
+  // ("TikTok – Make Your Day"), not the video title; og:title is only
+  // marginally better, so keep it last.
   let title = null;
-  const og = document.querySelector('meta[property="og:title"]');
-  if (og?.content) title = og.content.trim().slice(0, 512);
-  if (!title && document.title) title = document.title.trim().slice(0, 512);
+  const DESC_SELECTORS = [
+    '[data-e2e="browse-video-desc"]',
+    '[data-e2e="video-desc"]',
+  ];
+  let node = video;
+  for (let i = 0; i < 8 && node && !title; i++) {
+    for (const sel of DESC_SELECTORS) {
+      const el = node.querySelector?.(sel);
+      if (el?.textContent?.trim()) { title = el.textContent.trim().slice(0, 512); break; }
+    }
+    node = node.parentElement;
+  }
+  // No document-wide desc lookup: the feed preloads neighbouring videos, so a
+  // page-wide querySelector could grab the WRONG video's description.
+  if (!title) {
+    const og = document.querySelector('meta[property="og:title"]');
+    if (og?.content) title = og.content.trim().slice(0, 512);
+  }
 
   return { channel, videoId, title };
 }
