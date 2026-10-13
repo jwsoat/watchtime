@@ -76,7 +76,7 @@ Tasker's XML format shifts between releases. If import fails, recreate:
   2. `Run Task: WT End`
 - **Task** `WT Loop`:
   1. `Variable Set %WT_APP → %applabel`
-  2. `Variable Set %WT_JSON → {"heartbeats":[{"ts":%TS,"platform":"mobile-android","channel":"%WT_APP","title":null,"video_id":null,"state":"active","tab_visible":true,"client_id":"%WT_CLIENT","media_user":null,"display_name":null}]}`
+  2. `Variable Set %WT_JSON → {"heartbeats":[{"ts":%TIMES,"platform":"mobile-android","channel":"%WT_APP","title":null,"video_id":null,"state":"active","tab_visible":true,"client_id":"%WT_CLIENT","media_user":null,"display_name":null}]}`
   3. `HTTP Request: %WT_URL/media/heartbeats, Method POST, Headers
      X-API-Key: %WT_KEY · Content-Type: application/json, Body %WT_JSON`
   4. `Wait 10s`
