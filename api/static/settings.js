@@ -493,6 +493,10 @@ async function loadHomeAssistantConfig() {
   $("ha-token").placeholder = cfg.has_token
     ? "leave blank to keep saved token"
     : "paste your long-lived access token";
+  $("ha-api-key").value = "";
+  $("ha-api-key").placeholder = cfg.has_api_key
+    ? "leave blank to keep saved key"
+    : "paste your YouTube Data API key";
   const status = $("ha-status");
   if (cfg.configured) {
     status.textContent = "Configured — polling active.";
@@ -507,6 +511,7 @@ $("ha-save-btn").addEventListener("click", async () => {
   const body = {
     base_url: $("ha-base-url").value.trim(),
     token: $("ha-token").value,
+    api_key: $("ha-api-key").value,
   };
   const status = $("ha-status");
   status.textContent = "Saving…";
