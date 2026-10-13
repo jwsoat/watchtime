@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TaskerData sr="" dvi="1" tv="6.3.13">
+	<dmetric>1080.0,2400.0</dmetric>
+	<Profile sr="prof1" ve="2">
+		<cdate>1760400000000</cdate>
+		<edate>1760400000000</edate>
+		<id>1</id>
+		<mid0>10</mid0>
+		<mid1>11</mid1>
+		<nme>WT App Tracked</nme>
+		<App sr="con0" ve="2">
+			<cls0>com.zhiliaoapp.musically</cls0>
+			<cls1>tv.twitch.android.app</cls1>
+			<label0>TikTok</label0>
+			<label1>Twitch</label1>
+		</App>
+	</Profile>
+	<Task sr="task10">
+		<cdate>1760400000010</cdate>
+		<edate>1760400000010</edate>
+		<id>10</id>
+		<nme>WT Start</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>137</code>
+			<Str sr="arg0" ve="3">WT Loop</Str>
+			<Int sr="arg1" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">1</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_APP</Str>
+			<Str sr="arg1" ve="3">%applabel</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act3" ve="7">
+			<code>130</code>
+			<Str sr="arg0" ve="3">WT Loop</Str>
+			<Int sr="arg1" val="6"/>
+			<Int sr="arg2" val="0"/>
+			<Str sr="arg3" ve="3"/>
+			<Str sr="arg4" ve="3"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="0"/>
+			<Str sr="arg7" ve="3"/>
+		</Action>
+	</Task>
+	<Task sr="task11">
+		<cdate>1760400000011</cdate>
+		<edate>1760400000011</edate>
+		<id>11</id>
+		<nme>WT Exit</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">0</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>130</code>
+			<Str sr="arg0" ve="3">WT End</Str>
+			<Int sr="arg1" val="6"/>
+			<Int sr="arg2" val="0"/>
+			<Str sr="arg3" ve="3"/>
+			<Str sr="arg4" ve="3"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="0"/>
+			<Str sr="arg7" ve="3"/>
+		</Action>
+	</Task>
+	<Task sr="task12">
+		<cdate>1760400000012</cdate>
+		<edate>1760400000012</edate>
+		<id>12</id>
+		<nme>WT Loop</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_JSON</Str>
+			<Str sr="arg1" ve="3">{"heartbeats":[{"ts":%TS,"platform":"mobile-android","channel":"%WT_APP","title":null,"video_id":null,"state":"active","tab_visible":true,"client_id":"%WT_CLIENT","media_user":null,"display_name":null}]}</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>110</code>
+			<Str sr="arg0" ve="3">%WT_URL/media/heartbeats</Str>
+			<Str sr="arg1" ve="3">POST</Str>
+			<Str sr="arg2" ve="3"/>
+			<Str sr="arg3" ve="3">%WT_JSON</Str>
+			<Str sr="arg4" ve="3"/>
+			<Str sr="arg5" ve="3">X-API-Key: %WT_KEY
+Content-Type: application/json</Str>
+			<Int sr="arg6" val="0"/>
+			<Int sr="arg7" val="0"/>
+			<Int sr="arg8" val="0"/>
+			<Int sr="arg9" val="0"/>
+			<Int sr="argA" val="0"/>
+			<Str sr="argB" ve="3"/>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>30</code>
+			<Int sr="arg0" val="0"/>
+			<Int sr="arg1" val="0"/>
+			<Int sr="arg2" val="10"/>
+		</Action>
+		<Action sr="act3" ve="7">
+			<code>129</code>
+			<Str sr="arg0" ve="3">if (local("%WT_ACTIVE") != "1") exit();</Str>
+			<Str sr="arg1" ve="3"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+		</Action>
+		<Action sr="act4" ve="7">
+			<code>135</code>
+			<Int sr="arg0" val="1"/>
+			<Int sr="arg1" val="0"/>
+		</Action>
+	</Task>
+	<Task sr="task13">
+		<cdate>1760400000013</cdate>
+		<edate>1760400000013</edate>
+		<id>13</id>
+		<nme>WT End</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_JSON</Str>
+			<Str sr="arg1" ve="3">{"heartbeats":[{"ts":%TS,"platform":"mobile-android","channel":"%WT_APP","title":null,"video_id":null,"state":"passive","tab_visible":false,"client_id":"%WT_CLIENT","media_user":null,"display_name":null}]}</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>110</code>
+			<Str sr="arg0" ve="3">%WT_URL/media/heartbeats</Str>
+			<Str sr="arg1" ve="3">POST</Str>
+			<Str sr="arg2" ve="3"/>
+			<Str sr="arg3" ve="3">%WT_JSON</Str>
+			<Str sr="arg4" ve="3"/>
+			<Str sr="arg5" ve="3">X-API-Key: %WT_KEY
+Content-Type: application/json</Str>
+			<Int sr="arg6" val="0"/>
+			<Int sr="arg7" val="0"/>
+			<Int sr="arg8" val="0"/>
+			<Int sr="arg9" val="0"/>
+			<Int sr="argA" val="0"/>
+			<Str sr="argB" ve="3"/>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>137</code>
+			<Str sr="arg0" ve="3">WT Loop</Str>
+			<Int sr="arg1" val="0"/>
+		</Action>
+	</Task>
+	<Task sr="task14">
+		<cdate>1760400000014</cdate>
+		<edate>1760400000014</edate>
+		<id>14</id>
+		<nme>WT Setup</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_URL</Str>
+			<Str sr="arg1" ve="3">https://stats.jwsoat.co.nz</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_KEY</Str>
+			<Str sr="arg1" ve="3">PASTE_API_KEY_HERE</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_CLIENT</Str>
+			<Str sr="arg1" ve="3">android-%RANDOM</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act3" ve="7">
+			<code>590</code>
+			<Str sr="arg0" ve="3">%WT_URL|%WT_KEY|%WT_CLIENT</Str>
+			<Str sr="arg1" ve="3">|</Str>
+			<Int sr="arg2" val="0"/>
+		</Action>
+		<Action sr="act4" ve="7">
+			<code>548</code>
+			<Str sr="arg0" ve="3">Watchtime vars saved: %WT_URL / key set / client %WT_CLIENT</Str>
+			<Int sr="arg1" val="0"/>
+		</Action>
+	</Task>
+	<Project sr="proj0" ve="2">
+		<cdate>1760400000000</cdate>
+		<name>Watchtime Mobile</name>
+		<pids>1</pids>
+		<tids>10,11,12,13,14</tids>
+	</Project>
+</TaskerData>
