@@ -24,6 +24,12 @@ function getChannelFromUrl() {
     "downloads", "turbo", "prime", "jobs", "about",
   ]);
   if (blocked.has(first)) return null;
+  // Mod view: twitch.tv/moderator/<channel> — take the segment after
+  // "moderator" instead of "moderator" itself.
+  if (first === "moderator") {
+    const channel = path[1] && path[1].toLowerCase();
+    return channel || null;
+  }
   // /<channel>/video/... is a VOD — still counts as that channel
   return first;
 }
