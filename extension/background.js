@@ -88,7 +88,7 @@ async function enqueueMedia(hb) {
   await chrome.storage.local.set({ media_queue: queue });
 }
 
-const MEDIA_PLATFORMS = new Set(["x", "facebook", "instagram"]);
+const MEDIA_PLATFORMS = new Set(["x", "facebook", "instagram", "tiktok"]);
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "heartbeat") {
