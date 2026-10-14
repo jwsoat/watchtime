@@ -19,7 +19,7 @@ the app name, so per-platform stats rank **apps** (TikTok, Twitch, Netflix…).
   1. if a tracking loop is already running (`%WT_ACTIVE`), stop it first
      (this is a *different tracked app* coming to the front — `WT End` closes
      the previous session)
-  2. set `%WT_ACTIVE = 1`, snapshot `%WT_APP = %applabel`, then run `WT Loop`
+  2. set `%WT_ACTIVE = 1`, snapshot `%WT_APP = %app`, then run `WT Loop`
      (async — runs until told to stop)
   3. run `WT End` once, which kills any leftover loop and emits a baseline
      `passive` beat for the previous app
@@ -68,14 +68,14 @@ Tasker's XML format shifts between releases. If import fails, recreate:
   Enter task:
   1. `If %WT_ACTIVE = 1` → `Stop Task: WT Loop` → `End If`
   2. `Variable Set %WT_ACTIVE → 1`
-  3. `Variable Set %WT_APP → %applabel`
+  3. `Variable Set %WT_APP → %app`
   4. `Run Task: WT Loop` (**not** "Wait for completion")
   5. `Run Task: WT End`
 - **Profile B** `WT App Left`: State context **App** (same apps) → Exit task:
   1. `Variable Set %WT_ACTIVE → 0`
   2. `Run Task: WT End`
 - **Task** `WT Loop`:
-  1. `Variable Set %WT_APP → %applabel`
+  1. `Variable Set %WT_APP → %app`
   2. `Variable Set %WT_JSON → {"heartbeats":[{"ts":%TIMES,"platform":"mobile-android","channel":"%WT_APP","title":null,"video_id":null,"state":"active","tab_visible":true,"client_id":"%WT_CLIENT","media_user":null,"display_name":null}]}`
   3. `HTTP Request: %WT_URL/media/heartbeats, Method POST, Headers
      X-API-Key: %WT_KEY · Content-Type: application/json, Body %WT_JSON`
