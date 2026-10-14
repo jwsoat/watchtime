@@ -1,95 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <TaskerData sr="" dvi="1" tv="6.3.13">
-	<Profile sr="prof1" ve="2">
-		<cdate>1760400000000</cdate>
-		<edate>1760400000000</edate>
-		<id>1</id>
-		<mid0>10</mid0>
-		<mid1>11</mid1>
-		<nme>WT App Tracked</nme>
+	<Profile sr="prof100" ve="2">
+		<cdate>1760400000100</cdate>
+		<edate>1760400000100</edate>
+		<id>100</id>
+		<mid0>203</mid0>
+		<mid1>204</mid1>
+		<nme>WT TikTok</nme>
 		<App sr="con0" ve="2">
 			<cls0>com.zhiliaoapp.musically</cls0>
-			<cls1>tv.twitch.android.app</cls1>
 			<label0>TikTok</label0>
-			<label1>Twitch</label1>
 		</App>
 	</Profile>
-	<Task sr="task10">
-		<cdate>1760400000010</cdate>
-		<edate>1760400000010</edate>
-		<id>10</id>
-		<nme>WT Start</nme>
-		<pri>6</pri>
-		<Action sr="act0" ve="7">
-			<code>547</code>
-			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
-			<Str sr="arg1" ve="3">1</Str>
-			<Int sr="arg2" val="0"/>
-			<Int sr="arg3" val="0"/>
-			<Int sr="arg4" val="0"/>
-			<Int sr="arg5" val="3"/>
-			<Int sr="arg6" val="0"/>
-		</Action>
-		<Action sr="act1" ve="7">
-			<code>547</code>
-			<Str sr="arg0" ve="3">%WT_APP</Str>
-			<Str sr="arg1" ve="3">%app</Str>
-			<Int sr="arg2" val="0"/>
-			<Int sr="arg3" val="0"/>
-			<Int sr="arg4" val="0"/>
-			<Int sr="arg5" val="3"/>
-			<Int sr="arg6" val="0"/>
-		</Action>
-		<Action sr="act2" ve="7">
-			<code>130</code>
-			<Str sr="arg0" ve="3">WT Loop</Str>
-			<Int sr="arg1" val="6"/>
-			<Int sr="arg2" val="0"/>
-			<Int sr="arg3" val="0"/>
-			<Int sr="arg4" val="0"/>
-			<Int sr="arg5" val="0"/>
-			<Int sr="arg6" val="0"/>
-			<Int sr="arg7" val="0"/>
-			<Int sr="arg8" val="0"/>
-			<Int sr="arg9" val="0"/>
-			<Int sr="arg10" val="1"/>
-		</Action>
-	</Task>
-	<Task sr="task11">
-		<cdate>1760400000011</cdate>
-		<edate>1760400000011</edate>
-		<id>11</id>
-		<nme>WT Exit</nme>
-		<pri>6</pri>
-		<Action sr="act0" ve="7">
-			<code>547</code>
-			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
-			<Str sr="arg1" ve="3">0</Str>
-			<Int sr="arg2" val="0"/>
-			<Int sr="arg3" val="0"/>
-			<Int sr="arg4" val="0"/>
-			<Int sr="arg5" val="3"/>
-			<Int sr="arg6" val="0"/>
-		</Action>
-		<Action sr="act1" ve="7">
-			<code>130</code>
-			<Str sr="arg0" ve="3">WT End</Str>
-			<Int sr="arg1" val="6"/>
-			<Int sr="arg2" val="0"/>
-			<Int sr="arg3" val="0"/>
-			<Int sr="arg4" val="0"/>
-			<Int sr="arg5" val="0"/>
-			<Int sr="arg6" val="0"/>
-			<Int sr="arg7" val="0"/>
-			<Int sr="arg8" val="0"/>
-			<Int sr="arg9" val="0"/>
-			<Int sr="arg10" val="1"/>
-		</Action>
-	</Task>
-	<Task sr="task12">
+	<Profile sr="prof101" ve="2">
+		<cdate>1760400000101</cdate>
+		<edate>1760400000101</edate>
+		<id>101</id>
+		<mid0>205</mid0>
+		<mid1>206</mid1>
+		<nme>WT Twitch</nme>
+		<App sr="con0" ve="2">
+			<cls0>tv.twitch.android.app</cls0>
+			<label0>Twitch</label0>
+		</App>
+	</Profile>
+	<Task sr="task200">
 		<cdate>1760400000012</cdate>
 		<edate>1760400000012</edate>
-		<id>12</id>
+		<id>200</id>
 		<nme>WT Loop</nme>
 		<pri>6</pri>
 		<Action sr="act0" ve="7">
@@ -144,10 +82,10 @@ Content-Type: application/json</Str>
 			<Int sr="arg1" val="0"/>
 		</Action>
 	</Task>
-	<Task sr="task13">
+	<Task sr="task201">
 		<cdate>1760400000013</cdate>
 		<edate>1760400000013</edate>
-		<id>13</id>
+		<id>201</id>
 		<nme>WT End</nme>
 		<pri>6</pri>
 		<Action sr="act0" ve="7">
@@ -186,16 +124,16 @@ Content-Type: application/json</Str>
 			<Int sr="arg11" val="0"/>
 		</Action>
 	</Task>
-	<Task sr="task14">
+	<Task sr="task202">
 		<cdate>1760400000014</cdate>
 		<edate>1760400000014</edate>
-		<id>14</id>
+		<id>202</id>
 		<nme>WT Setup</nme>
 		<pri>6</pri>
 		<Action sr="act0" ve="7">
 			<code>547</code>
 			<Str sr="arg0" ve="3">%WT_URL</Str>
-			<Str sr="arg1" ve="3">https://stats.jwsoat.co.nz</Str>
+			<Str sr="arg1" ve="3">http://192.168.1.119:8766</Str>
 			<Int sr="arg2" val="0"/>
 			<Int sr="arg3" val="0"/>
 			<Int sr="arg4" val="0"/>
@@ -205,7 +143,7 @@ Content-Type: application/json</Str>
 		<Action sr="act1" ve="7">
 			<code>547</code>
 			<Str sr="arg0" ve="3">%WT_KEY</Str>
-			<Str sr="arg1" ve="3">PASTE_API_KEY_HERE</Str>
+			<Str sr="arg1" ve="3">jwsoat12</Str>
 			<Int sr="arg2" val="0"/>
 			<Int sr="arg3" val="0"/>
 			<Int sr="arg4" val="0"/>
@@ -223,21 +161,175 @@ Content-Type: application/json</Str>
 			<Int sr="arg6" val="0"/>
 		</Action>
 		<Action sr="act3" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">0</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act4" ve="7">
 			<code>590</code>
 			<Str sr="arg0" ve="3">%WT_URL|%WT_KEY|%WT_CLIENT</Str>
 			<Str sr="arg1" ve="3">|</Str>
 			<Int sr="arg2" val="0"/>
 		</Action>
-		<Action sr="act4" ve="7">
+		<Action sr="act5" ve="7">
 			<code>548</code>
 			<Str sr="arg0" ve="3">Watchtime vars saved</Str>
 			<Int sr="arg1" val="0"/>
 		</Action>
 	</Task>
+	<Task sr="task203">
+		<cdate>176040001000</cdate>
+		<edate>176040001000</edate>
+		<id>203</id>
+		<nme>WT Start tiktok</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_APP</Str>
+			<Str sr="arg1" ve="3">tiktok</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">1</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>130</code>
+			<Str sr="arg0" ve="3">WT Loop</Str>
+			<Int sr="arg1" val="6"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="0"/>
+			<Int sr="arg7" val="0"/>
+			<Int sr="arg8" val="0"/>
+			<Int sr="arg9" val="0"/>
+			<Int sr="arg10" val="1"/>
+		</Action>
+	</Task>
+	<Task sr="task204">
+		<cdate>176040001001</cdate>
+		<edate>176040001001</edate>
+		<id>204</id>
+		<nme>WT Exit tiktok</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">0</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>130</code>
+			<Str sr="arg0" ve="3">WT End</Str>
+			<Int sr="arg1" val="6"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="0"/>
+			<Int sr="arg7" val="0"/>
+			<Int sr="arg8" val="0"/>
+			<Int sr="arg9" val="0"/>
+			<Int sr="arg10" val="1"/>
+		</Action>
+	</Task>
+	<Task sr="task205">
+		<cdate>176040001002</cdate>
+		<edate>176040001002</edate>
+		<id>205</id>
+		<nme>WT Start twitch</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_APP</Str>
+			<Str sr="arg1" ve="3">twitch</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">1</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act2" ve="7">
+			<code>130</code>
+			<Str sr="arg0" ve="3">WT Loop</Str>
+			<Int sr="arg1" val="6"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="0"/>
+			<Int sr="arg7" val="0"/>
+			<Int sr="arg8" val="0"/>
+			<Int sr="arg9" val="0"/>
+			<Int sr="arg10" val="1"/>
+		</Action>
+	</Task>
+	<Task sr="task206">
+		<cdate>176040001003</cdate>
+		<edate>176040001003</edate>
+		<id>206</id>
+		<nme>WT Exit twitch</nme>
+		<pri>6</pri>
+		<Action sr="act0" ve="7">
+			<code>547</code>
+			<Str sr="arg0" ve="3">%WT_ACTIVE</Str>
+			<Str sr="arg1" ve="3">0</Str>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="3"/>
+			<Int sr="arg6" val="0"/>
+		</Action>
+		<Action sr="act1" ve="7">
+			<code>130</code>
+			<Str sr="arg0" ve="3">WT End</Str>
+			<Int sr="arg1" val="6"/>
+			<Int sr="arg2" val="0"/>
+			<Int sr="arg3" val="0"/>
+			<Int sr="arg4" val="0"/>
+			<Int sr="arg5" val="0"/>
+			<Int sr="arg6" val="0"/>
+			<Int sr="arg7" val="0"/>
+			<Int sr="arg8" val="0"/>
+			<Int sr="arg9" val="0"/>
+			<Int sr="arg10" val="1"/>
+		</Action>
+	</Task>
 	<Project sr="proj0" ve="2">
 		<cdate>1760400000000</cdate>
 		<name>Watchtime Mobile</name>
-		<pids>1</pids>
-		<tids>10,11,12,13,14</tids>
+		<pids>100,101</pids>
+		<tids>200,201,202,203,204,205,206</tids>
 	</Project>
 </TaskerData>
