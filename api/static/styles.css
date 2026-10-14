@@ -275,3 +275,4 @@ body.media-page .pill:hover { border-color: var(--media-accent, var(--purple)); 
 .platform-badge.instagram { background: rgba(225,48,108,0.15); color: #e1306c; }
 .platform-badge.plex { background: rgba(229,160,13,0.15); color: #e5a00d; }
 .platform-badge.tiktok { background: rgba(255,0,80,0.15); color: #ff0050; }
+.platform-badge.mobile-android { background: rgba(61,220,132,0.15); color: #3ddc84; }

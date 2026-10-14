@@ -4,7 +4,8 @@ Personal watch time logger for **Twitch**, **YouTube**, **X (Twitter)**,
 **Facebook**, **Instagram** and **Plex**. A browser extension sends heartbeats
 to a self-hosted API, which stores them in SQLite and serves a multi-platform
 dashboard. Plex is tracked server-side by polling a Plex Media Server, so it
-captures playback on every device, not just the browser.
+captures playback on every device, not just the browser. Android app usage is
+tracked by a Tasker automation on the phone.
 
 Live at **stats.jwsoat.co.nz**.
 
@@ -36,13 +37,13 @@ Four views behind an API key gate:
 | `/` | **Merged** — combined Twitch + YouTube rankings, daily chart, quick stats |
 | `/twitch` | Twitch-only — channels, categories, daily chart |
 | `/youtube` | YouTube-only — channels, videos, daily chart |
-| `/x` `/facebook` `/instagram` `/tiktok` `/plex` | Per-source — top accounts, top videos, daily chart |
+| `/x` `/facebook` `/instagram` `/tiktok` `/plex` `/mobile-android` | Per-source — top accounts, top videos, daily chart |
 | `/tv` | Ambient scoreboard with rotating panels (point a spare display here) |
 | `/settings` | Accounts, channel links, avatars, data management, Google Drive backup |
 
 **Merged view** ranks creators across **all** platforms in two columns (odd
-ranks left, even right, up to 40 total). Platform badges (TW/YT/X/FB/IG/PLEX)
-indicate source (TW/YT/X/FB/IG/TT/PLEX). Channels linked as the same creator (see **Creator links** in
+ranks left, even right, up to 40 total). Platform badges (TW/YT/X/FB/IG/TT/PLEX/DROID)
+indicate source. Channels linked as the same creator (see **Creator links** in
 Settings) roll up into a single combined row — e.g. watching the same creator on
 YouTube and Plex counts as one.
 
@@ -85,6 +86,30 @@ Open twitch.tv or youtube.com, watch something, verify:
 curl -H "X-API-Key: $API_KEY" https://stats.jwsoat.co.nz/stats/today
 ```
 
+### 3. Android (Tasker)
+
+App usage is tracked as the `mobile-android` platform, where `channel` is the
+foreground **app name** (dashboards therefore rank apps, not creators). Tasker
+(http://tasker.joaoapps.com) provides the foreground-app trigger and the HTTP
+client; no APK build needed.
+
+1. Install Tasker and grant it **Usage Stats** access (Tasker prompts for it
+   when you add an Application context).
+2. Import the profiles from [`tasker/watchtime-mobile-android.xml`](tasker/watchtime-mobile-android.xml)
+   (Tasker → long-press the project list → **Import**), or build them by hand
+   as described in [`tasker/README.md`](tasker/README.md).
+3. In the imported `WT Setup` task, set `%WT_URL` to your API URL and `%WT_KEY`
+   to the API key, then run `WT Setup` once (it mints `%WT_CLIENT`).
+4. Enable the profiles and open a tracked app — verify:
+```bash
+curl -H "X-API-Key: $API_KEY" https://stats.jwsoat.co.nz/stats/media/mobile-android/today
+```
+
+Notes: add every app you want tracked to the profile's Application context
+(the XML ships with TikTok and Twitch pre-selected). Battery: the loop only
+runs while a tracked app is foreground, so Doze is not engaged. If you also
+use the same service in the desktop browser, both count — same as Plex.
+
 ## API endpoints
 
 All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
@@ -96,7 +121,7 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | POST | `/heartbeat` | Single Twitch heartbeat |
 | POST | `/heartbeats` | Batched Twitch heartbeats |
 | POST | `/youtube/heartbeats` | Batched YouTube heartbeats |
-| POST | `/media/heartbeats` | Batched heartbeats for x / facebook / instagram / tiktok / plex (each carries its own `platform`) |
+| POST | `/media/heartbeats` | Batched heartbeats for x / facebook / instagram / tiktok / plex / mobile-android (each carries its own `platform`) |
 
 ### Twitch stats
 
@@ -130,9 +155,11 @@ All `/stats/*`, `/heartbeat*`, and `/settings/*` require `X-API-Key` header.
 | GET | `/stats/youtube/playlists` | Playlist stats |
 | GET | `/stats/youtube/users` | Known YouTube users |
 
-### Other sources (X, Facebook, Instagram, TikTok, Plex)
+### Other sources (X, Facebook, Instagram, TikTok, Plex, Android)
 
-`{platform}` is one of `x`, `facebook`, `instagram`, `tiktok`, `plex`.
+`{platform}` is one of `x`, `facebook`, `instagram`, `tiktok`, `plex`,
+`mobile-android` (Android app usage; `channel` = app name, `media_user` always
+null — see **Android (Tasker)** under Setup).
 
 | Method | Path | Notes |
 |--------|------|-------|
