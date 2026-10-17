@@ -59,9 +59,17 @@ function getChannelFromDom() {
 }
 
 function getVideoTitle() {
+  if (location.pathname.startsWith("/shorts/")) {
+    const shortsEl = document.querySelector("yt-shorts-video-title-view-model h1");
+    return shortsEl ? shortsEl.textContent.trim().slice(0, 512) : null;
+  }
   const el = document.querySelector("h1.ytd-watch-metadata yt-formatted-string")
           || document.querySelector("#title h1 yt-formatted-string");
   return el ? el.textContent.trim().slice(0, 512) : null;
+}
+
+function isShortsPage() {
+  return location.pathname.startsWith("/shorts/");
 }
 
 function getVideoState() {
@@ -124,6 +132,7 @@ function tick() {
     state: idle ? "passive" : "active",
     tab_visible: tabVisible,
     youtube_user: detectYoutubeUser() || ytUserFallback,
+    is_shorts: isShortsPage(),
     platform: "youtube",
   };
 

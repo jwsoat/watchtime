@@ -30,8 +30,10 @@ HEARTBEAT_INTERVAL = int(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", "60"))
 
 # Additional "generic" video sources stored in one table with a platform
 # discriminator. X/Twitter, Facebook and Instagram are tracked by the browser
-# extension; Plex is tracked server-side by polling a Plex Media Server.
-MEDIA_PLATFORMS = {"x", "facebook", "instagram", "plex", "tiktok"}
+# extension; Plex is tracked server-side by polling a Plex Media Server;
+# mobile-android is tracked by a Tasker automation on the phone (channel =
+# foreground app name).
+MEDIA_PLATFORMS = {"x", "facebook", "instagram", "plex", "tiktok", "mobile-android"}
 
 app = FastAPI(title="Twitch Watch Time API", version="0.1.0")
 
@@ -112,6 +114,11 @@ def tiktok_page():
     return _serve_html(STATIC_DIR / "media.html")
 
 
+@app.get("/mobile-android", include_in_schema=False)
+def mobile_android_page():
+    return _serve_html(STATIC_DIR / "media.html")
+
+
 @app.get("/settings", include_in_schema=False)
 def settings_page():
     return _serve_html(STATIC_DIR / "settings.html")
@@ -125,17 +132,17 @@ ALL_PLATFORMS = ("twitch", "youtube", "x", "facebook", "instagram", "plex", "tik
 
 def _ensure_platform_checks(conn):
     """Rebuild media_heartbeats / creator_aliases when their CHECK(platform IN
-    ...) constraint predates the tiktok platform. SQLite cannot ALTER a CHECK
+    ...) constraint predates the newest platform. SQLite cannot ALTER a CHECK
     constraint, so the table is rebuilt (create *_new, INSERT SELECT, drop,
     rename, recreate indexes — old indexes drop with the table). Idempotent:
-    reads the stored CREATE sql from sqlite_master and looks for 'tiktok' as
-    the sentinel. Uses positional row access so it works with either
-    row_factory."""
+    reads the stored CREATE sql from sqlite_master and looks for the newest
+    sentinel platform ('mobile-android' here). Uses positional row access so
+    it works with either row_factory."""
     specs = [
         ("media_heartbeats", "CREATE TABLE media_heartbeats_new (\n"
          "                id           INTEGER PRIMARY KEY AUTOINCREMENT,\n"
          "                ts           INTEGER NOT NULL,\n"
-         "                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex','tiktok')),\n"
+         "                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex','tiktok','mobile-android')),\n"
          "                channel      TEXT    NOT NULL,\n"
          "                title        TEXT,\n"
          "                video_id     TEXT,\n"
@@ -150,7 +157,7 @@ def _ensure_platform_checks(conn):
         ("creator_aliases", "CREATE TABLE creator_aliases_new (\n"
          "                id       INTEGER PRIMARY KEY AUTOINCREMENT,\n"
          "                group_id INTEGER NOT NULL,\n"
-         "                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex','tiktok')),\n"
+         "                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex','tiktok','mobile-android')),\n"
          "                channel  TEXT NOT NULL,\n"
          "                UNIQUE(platform, channel)\n"
          "            )",
@@ -161,7 +168,7 @@ def _ensure_platform_checks(conn):
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
             (table,),
         ).fetchone()
-        if not row or "'tiktok'" in (row[0] or ""):
+        if not row or "'mobile-android'" in (row[0] or ""):
             continue
         cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
         conn.execute(create_sql)
@@ -189,6 +196,9 @@ def migrate_db(conn):
     media_cols = {row[1] for row in conn.execute("PRAGMA table_info(media_heartbeats)")}
     if "display_name" not in media_cols:
         conn.execute("ALTER TABLE media_heartbeats ADD COLUMN display_name TEXT")
+    yt_cols = {row[1] for row in conn.execute("PRAGMA table_info(youtube_heartbeats)")}
+    if "is_shorts" not in yt_cols:
+        conn.execute("ALTER TABLE youtube_heartbeats ADD COLUMN is_shorts INTEGER NOT NULL DEFAULT 0")
     # One-time seed of plex_config from legacy env vars when present.
     cur = conn.execute("SELECT base_url, token FROM plex_config WHERE id = 1").fetchone()
     if cur and not cur[0] and not cur[1]:
@@ -492,6 +502,7 @@ def init_db():
                 state        TEXT    NOT NULL CHECK(state IN ('active','passive')),
                 tab_visible  INTEGER NOT NULL CHECK(tab_visible IN (0,1)),
                 youtube_user TEXT,
+                is_shorts   INTEGER NOT NULL DEFAULT 0,
                 client_id    TEXT    NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_yt_ts
@@ -501,7 +512,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS media_heartbeats (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 ts           INTEGER NOT NULL,
-                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex','tiktok')),
+                platform     TEXT    NOT NULL CHECK(platform IN ('x','facebook','instagram','plex','tiktok','mobile-android')),
                 channel      TEXT    NOT NULL,
                 title        TEXT,
                 video_id     TEXT,
@@ -528,7 +539,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS creator_aliases (
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_id INTEGER NOT NULL,
-                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex','tiktok')),
+                platform TEXT NOT NULL CHECK(platform IN ('twitch','youtube','x','facebook','instagram','plex','tiktok','mobile-android')),
                 channel  TEXT NOT NULL,
                 UNIQUE(platform, channel)
             );
@@ -625,6 +636,7 @@ class YoutubeHeartbeat(BaseModel):
     tab_visible: bool
     client_id: str = Field(..., min_length=1, max_length=64)
     youtube_user: Optional[str] = Field(default=None, max_length=128)
+    is_shorts: Optional[bool] = Field(default=None)
 
 
 class YoutubeHeartbeatBatch(BaseModel):
@@ -633,7 +645,7 @@ class YoutubeHeartbeatBatch(BaseModel):
 
 class MediaHeartbeat(BaseModel):
     ts: int = Field(..., description="Unix seconds, UTC")
-    platform: str = Field(..., pattern="^(x|facebook|instagram|plex|tiktok)$")
+    platform: str = Field(..., pattern="^(x|facebook|instagram|plex|tiktok|mobile-android)$")
     channel: str = Field(..., min_length=1, max_length=128)
     title: Optional[str] = Field(default=None, max_length=512)
     video_id: Optional[str] = Field(default=None, max_length=128)
@@ -839,14 +851,15 @@ def heartbeats_batch(batch: HeartbeatBatch):
 def youtube_heartbeats_batch(batch: YoutubeHeartbeatBatch):
     rows = [
         (hb.ts, hb.channel.lower(), hb.title, hb.video_id, hb.playlist_id,
-         hb.state, int(hb.tab_visible), hb.youtube_user, hb.client_id)
+         hb.state, int(hb.tab_visible), hb.youtube_user,
+         int(bool(hb.is_shorts)), hb.client_id)
         for hb in batch.heartbeats
     ]
     with db() as conn:
         conn.executemany(
             "INSERT INTO youtube_heartbeats "
-            "(ts, channel, title, video_id, playlist_id, state, tab_visible, youtube_user, client_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(ts, channel, title, video_id, playlist_id, state, tab_visible, youtube_user, is_shorts, client_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
     return {"ok": True, "stored": len(rows)}

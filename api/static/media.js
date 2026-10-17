@@ -10,6 +10,7 @@ const PLATFORM_META = {
   instagram: { label: "Instagram", accent: "#e1306c", grad: "linear-gradient(135deg,#feda75,#d62976,#962fbf)" },
   plex:      { label: "Plex", accent: "#e5a00d", grad: "linear-gradient(135deg,#e5a00d,#1a1a1a)" },
   tiktok:    { label: "TikTok", accent: "#ff0050", grad: "linear-gradient(135deg,#25f4ee,#ff0050)" },
+  "mobile-android": { label: "Android", accent: "#3ddc84", grad: "linear-gradient(135deg,#3ddc84,#073042)" },
 };
 const META = PLATFORM_META[PLATFORM] || PLATFORM_META.x;
 
