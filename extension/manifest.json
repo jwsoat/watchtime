@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Watchtime Logger",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Personal watch time tracker for live streams and videos. Records what you watch to your own self-hosted dashboard.",
   "permissions": ["storage", "alarms"],
   "host_permissions": [
