@@ -5,7 +5,8 @@ Personal watch time logger for **Twitch**, **YouTube**, **X (Twitter)**,
 to a self-hosted API, which stores them in SQLite and serves a multi-platform
 dashboard. Plex is tracked server-side by polling a Plex Media Server, so it
 captures playback on every device, not just the browser. Android app usage is
-tracked by a Tasker automation on the phone.
+tracked by the native APK in [`android/`](android/README.md) (Tasker is the
+legacy alternative).
 
 Live at **stats.jwsoat.co.nz**.
 
@@ -86,10 +87,34 @@ Open twitch.tv or youtube.com, watch something, verify:
 curl -H "X-API-Key: $API_KEY" https://stats.jwsoat.co.nz/stats/today
 ```
 
-### 3. Android (Tasker)
+### 3. Android (native APK — preferred)
 
 App usage is tracked as the `mobile-android` platform, where `channel` is the
-foreground **app name** (dashboards therefore rank apps, not creators). Tasker
+foreground **app name** (dashboards therefore rank apps, not creators). The
+native agent in [`android/`](android/README.md) runs its own foreground service,
+detects the foreground app via UsageStats and POSTs the same heartbeat the
+extension sends — no Tasker needed.
+
+1. Install `android/app/build/outputs/apk/release/app-release.apk` (or build it:
+   see [`android/README.md`](android/README.md)).
+2. Open **Watchtime Agent**, set the API key, tap **Test beat** — expect HTTP 200.
+3. Grant **Usage access** (Settings → Special app access) and exempt the app from
+   battery optimisation.
+4. Tick the apps to track, flip **Run in background** on, then verify:
+```bash
+curl -H "X-API-Key: *** https://stats.jwsoat.co.nz/stats/media/mobile-android/today
+```
+
+Devices can also be provisioned headlessly — see "Provisioning from adb" in
+[`android/README.md`](android/README.md).
+
+Battery: the watcher only POSTs while a tracked app is on screen and sends a
+final `passive` beat when the session ends (app switch or screen off).
+
+#### 3b. Android (Tasker — legacy alternative)
+
+The older automation still works and is documented in
+[`tasker/README.md`](tasker/README.md): Tasker
 (http://tasker.joaoapps.com) provides the foreground-app trigger and the HTTP
 client; no APK build needed.
 
@@ -100,10 +125,7 @@ client; no APK build needed.
    as described in [`tasker/README.md`](tasker/README.md).
 3. In the imported `WT Setup` task, set `%WT_URL` to your API URL and `%WT_KEY`
    to the API key, then run `WT Setup` once (it mints `%WT_CLIENT`).
-4. Enable the profiles and open a tracked app — verify:
-```bash
-curl -H "X-API-Key: $API_KEY" https://stats.jwsoat.co.nz/stats/media/mobile-android/today
-```
+4. Enable the profiles and open a tracked app.
 
 Notes: add every app you want tracked to the profile's Application context
 (the XML ships with TikTok and Twitch pre-selected). Battery: the loop only

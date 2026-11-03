@@ -12,6 +12,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -678,6 +679,7 @@ class UserAccount(BaseModel):
     facebook_user: Optional[str] = Field(default=None, max_length=128)
     instagram_user: Optional[str] = Field(default=None, max_length=128)
     plex_user: Optional[str] = Field(default=None, max_length=128)
+    media_user: Optional[str] = Field(default=None, max_length=128)
 
 
 class PlexConfig(BaseModel):
@@ -699,7 +701,7 @@ class HomeAssistantEntityUser(BaseModel):
 
 class CreatorAlias(BaseModel):
     label: str = Field(..., min_length=1, max_length=128)
-    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex)$")
+    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex|mobile-android)$")
     channel: str = Field(..., min_length=1, max_length=128)
 
 
@@ -870,18 +872,89 @@ def youtube_heartbeats_batch(batch: YoutubeHeartbeatBatch):
     return {"ok": True, "stored": len(rows)}
 
 
+# ---------- mobile-android creator resolution ----------
+# The Android app reports channel = the creator's display name taken from the
+# media notification (e.g. "Quality Highlights"). The browser extension
+# records the channel's YouTube @handle (e.g. "qualityhighlights"). To make
+# phone sessions merge with browser-tracked playback we resolve display names
+# to @handles at ingestion, using the exact same machinery as the Home
+# Assistant poller: one search.list call (~100 quota units) per NEW display
+# name, exact channelTitle match only, cached forever in
+# youtube_channel_handles. Cached entries are shared with HA — a name resolved
+# for the TV is never re-resolved (or re-billed) for the phone.
+
+# App labels the phone falls back to when no creator is known. These must
+# never be resolved to handles: "youtube" would otherwise be credited to the
+# actual YouTube channel instead of staying an app-level bucket.
+_ANDROID_APP_LABEL_NAMES = {
+    "youtube", "youtube music", "youtube kids", "youtube tv",
+    "netflix", "tiktok", "instagram", "facebook", "x", "twitter",
+    "twitch", "plex", "prime video", "disney+", "disney plus",
+    "hulu", "max", "hbo max", "peacock", "apple tv", "spotify",
+}
+
+_android_resolver_lock = threading.Lock()
+_android_resolver = None
+_android_resolver_key = None
+
+
+def _android_handle_resolver():
+    """Lazily build (and cache) the display-name → @handle resolver used for
+    mobile-android beats. Rebuilt only when the YouTube API key in
+    home_assistant_config changes; without a key it still serves cached
+    handles. Calls are serialized so concurrent beats for the same new
+    display name can't double-spend search quota."""
+    global _android_resolver, _android_resolver_key
+    import home_assistant_poller
+    api_key = home_assistant_poller._read_api_key(DB_PATH)
+    key = api_key or None
+    if _android_resolver is not None and _android_resolver_key == key:
+        return _android_resolver
+    with _android_resolver_lock:
+        if _android_resolver is None or _android_resolver_key != key:
+            built = home_assistant_poller._make_resolver(DB_PATH, key)
+            lock = threading.Lock()
+
+            def resolve(display_name):
+                with lock:
+                    return built(display_name)
+
+            _android_resolver = resolve
+            _android_resolver_key = key
+    return _android_resolver
+
+
 @app.post("/media/heartbeats", dependencies=[Depends(require_api_key)])
 def media_heartbeats_batch(batch: MediaHeartbeatBatch):
     """Ingest heartbeats for the generic video sources (x, facebook, instagram,
     plex). Each heartbeat carries its own `platform` so a single extension queue
-    can serve all browser-tracked sources."""
-    rows = [
-        (hb.ts, hb.platform, hb.channel.lower(), hb.title, hb.video_id,
-         hb.state, int(hb.tab_visible),
-         hb.media_user.lower() if hb.media_user else None,
-         hb.display_name, hb.client_id)
-        for hb in batch.heartbeats
-    ]
+    can serve all browser-tracked sources.
+
+    mobile-android beats carry the creator's display name from the phone's
+    media notification; it is resolved to the channel's YouTube @handle (same
+    cache as the Home Assistant poller) so those sessions merge with
+    browser-tracked playback. Names on the app-label blocklist are left as-is,
+    and when resolution fails the display name is kept."""
+    rows = []
+    for hb in batch.heartbeats:
+        channel = hb.channel.lower()
+        display_name = hb.display_name
+        if hb.platform == "mobile-android":
+            # Preserve the phone's human-readable label in display_name so the
+            # dashboard can show "Quality Highlights" even when channel has
+            # become the resolved @handle.
+            if display_name is None or display_name == hb.channel:
+                display_name = hb.channel
+            if channel not in _ANDROID_APP_LABEL_NAMES:
+                resolver = _android_handle_resolver()
+                if resolver is not None:
+                    channel = resolver(channel) or channel
+        rows.append((
+            hb.ts, hb.platform, channel, hb.title, hb.video_id,
+            hb.state, int(hb.tab_visible),
+            hb.media_user.lower() if hb.media_user else None,
+            display_name, hb.client_id,
+        ))
     with db() as conn:
         conn.executemany(
             "INSERT INTO media_heartbeats "
@@ -1452,7 +1525,7 @@ def delete_creator_group(group_id: int):
 
 
 class BulkCreatorAlias(BaseModel):
-    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex)$")
+    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex|mobile-android)$")
     channel: str = Field(..., min_length=1, max_length=128)
 
 
@@ -1526,6 +1599,7 @@ USER_ACCOUNT_PLATFORMS = (
     ("facebook", "facebook_user"),
     ("instagram", "instagram_user"),
     ("plex", "plex_user"),
+    ("mobile-android", "media_user"),
 )
 
 
@@ -1603,6 +1677,7 @@ def add_user_account(account: UserAccount):
         "facebook": account.facebook_user.lower() if account.facebook_user else None,
         "instagram": account.instagram_user.lower() if account.instagram_user else None,
         "plex": account.plex_user.lower() if account.plex_user else None,
+        "mobile-android": account.media_user.lower() if account.media_user else None,
     }
     if not any(handles.values()):
         raise HTTPException(

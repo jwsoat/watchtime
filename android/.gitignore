@@ -1,0 +1,9 @@
+local.properties
+.gradle/
+build/
+*.iml
+.idea/
+
+# signing credentials
+android/keystore.properties
+android/watchtime-release.jks

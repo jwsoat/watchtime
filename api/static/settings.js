@@ -212,6 +212,7 @@ const ACCOUNT_INPUTS = [
   { input: "input-account-facebook", field: "facebook_user" },
   { input: "input-account-instagram", field: "instagram_user" },
   { input: "input-account-plex", field: "plex_user" },
+  { input: "input-account-droid", field: "media_user" },
 ];
 
 $("add-account-form").addEventListener("submit", async (e) => {
