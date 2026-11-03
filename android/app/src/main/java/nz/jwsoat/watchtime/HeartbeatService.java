@@ -157,10 +157,17 @@ public class HeartbeatService extends Service {
         boolean interactive = powerManager == null || powerManager.isInteractive();
         String pkg = interactive ? watcher.foregroundPackage(this) : null;
         boolean tracked = pkg != null && Config.tracked(this).contains(pkg);
+        boolean mediaPlaying = MediaListener.isPlaying(this, pkg);
         android.util.Log.i("WT", "poll: pkg=" + pkg + " interactive=" + interactive
-                + " tracked=" + tracked + " trackedCount=" + Config.tracked(this).size());
+                + " tracked=" + tracked + " mediaPlaying=" + mediaPlaying
+                + " trackedCount=" + Config.tracked(this).size());
 
-        if (tracked) {
+        // Count only while the tracked app is on screen AND its media session is
+        // still live (the media notification disappears when playback ends/stops
+        // and the user stays inside the app). NOTE: mediaPlaying gates session
+        // *start* too — otherwise the poll right after a session close would
+        // immediately reopen the session and keep counting forever.
+        if (tracked && mediaPlaying) {
             String channel = Watcher.label(this, pkg);
             long now = System.currentTimeMillis();
             if (activeChannel == null || !activeChannel.equals(channel)) {
