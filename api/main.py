@@ -1193,18 +1193,22 @@ def media_stats_now(platform: str, user: Optional[str] = None):
     user_sql, user_params = _media_user_clause(user)
     with db() as conn:
         row = conn.execute(f"""
-            SELECT channel, title, media_user, display_name
+            SELECT channel, title, media_user, display_name, state
             FROM media_heartbeats
-            WHERE platform = ? AND ts >= ? AND state = 'active' {user_sql}
+            WHERE platform = ? AND ts >= ? {user_sql}
             ORDER BY ts DESC LIMIT 1
         """, (platform, cutoff, *user_params)).fetchone()
-    if not row:
-        return {"channel": None}
+    # The latest beat decides: a trailing passive beat (session closed — media
+    # ended, app left, screen off) means nothing is playing, even though an
+    # active beat exists within the 120s window.
+    if not row or row["state"] != "active":
+        return {"channel": None, "state": row["state"] if row else None}
     return {
         "channel": row["channel"],
         "display_name": row["display_name"],
         "title": row["title"],
         "media_user": row["media_user"],
+        "state": row["state"],
     }
 
 
