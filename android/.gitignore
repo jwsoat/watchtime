@@ -7,3 +7,7 @@ build/
 # signing credentials
 android/keystore.properties
 android/watchtime-release.jks
+
+# signing credentials + build artifacts (patterns relative to android/)
+keystore.properties
+watchtime-release.jks
