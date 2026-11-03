@@ -160,6 +160,8 @@ function updateWindowLabels() {
   const label = WINDOW_LABELS[state.window] || "Today";
   $("top-channels-label").textContent = `Top channels — ${label}`;
   $("top-videos-label").textContent = `Top videos — ${label}`;
+  const expand = $("top-channels-expand");
+  if (expand) expand.href = `/channels?platform=youtube&window=${state.window}&limit=50`;
 }
 
 async function updateTopChannels() {

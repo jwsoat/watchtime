@@ -256,6 +256,11 @@ async function updateDailyChart() {
 }
 
 async function updateMerged() {
+  const expandLeft = $("merged-left-expand");
+  const expandRight = $("merged-right-expand");
+  for (const el of [expandLeft, expandRight]) {
+    if (el) el.href = `/channels?platform=merged&window=${state.window}&limit=50`;
+  }
   const data = await api(withMergedUser(`/stats/merged/channels?window=${state.window}`));
   const rows = data.rows;
   const max = rows[0]?.seconds || 1;

@@ -276,3 +276,33 @@ body.media-page .pill:hover { border-color: var(--media-accent, var(--purple)); 
 .platform-badge.plex { background: rgba(229,160,13,0.15); color: #e5a00d; }
 .platform-badge.tiktok { background: rgba(255,0,80,0.15); color: #ff0050; }
 .platform-badge.mobile-android { background: rgba(61,220,132,0.15); color: #3ddc84; }
+
+/* ---------- Top channels expand / full-table page ---------- */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.card-head h2 { margin-bottom: 0; }
+.expand-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  white-space: nowrap;
+}
+.expand-btn:hover { color: var(--text); border-color: var(--purple); }
+body.yt-page .expand-btn:hover { border-color: var(--yt-red); }
+.length-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 6px;
+  align-self: center;
+}
+.pill.length { padding: 5px 12px; }

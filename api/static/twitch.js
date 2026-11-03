@@ -207,6 +207,8 @@ function updateWindowLabels() {
   const label = WINDOW_LABELS[state.window] || "Today";
   $("top-channels-label").textContent = `Top channels — ${label}`;
   $("top-categories-label").textContent = `Top categories — ${label}`;
+  const expand = $("top-channels-expand");
+  if (expand) expand.href = `/channels?platform=twitch&window=${state.window}&limit=50`;
 }
 
 // ---------- Top channels ----------
@@ -363,3 +365,6 @@ if (state.apiKey) {
 } else {
   showGate();
 }
+
+// keep the expand link's window in sync on first paint (boot also refreshes it)
+

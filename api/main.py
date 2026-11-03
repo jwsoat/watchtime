@@ -89,6 +89,11 @@ def youtube_page():
     return _serve_html(STATIC_DIR / "youtube.html")
 
 
+@app.get("/channels", include_in_schema=False)
+def channels_page():
+    return _serve_html(STATIC_DIR / "channels.html")
+
+
 @app.get("/x", include_in_schema=False)
 def x_page():
     return _serve_html(STATIC_DIR / "media.html")
