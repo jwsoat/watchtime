@@ -3,3 +3,7 @@ local.properties
 build/
 *.iml
 .idea/
+
+# signing credentials
+android/keystore.properties
+android/watchtime-release.jks
