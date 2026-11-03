@@ -234,7 +234,11 @@ async function refresh() {
   }
 }
 
-const PLATFORM_BADGES = { twitch: "TW", youtube: "YT", plex: "PX", android: "AND" };
+const PLATFORM_BADGES = {
+  twitch: "TW", youtube: "YT", x: "X",
+  facebook: "FB", instagram: "IG", plex: "PLEX", tiktok: "TT",
+  "mobile-android": "DROID",
+};
 
 // ---------- Controls ----------
 document.querySelectorAll(".pill[data-window]").forEach((pill) => {
