@@ -28,31 +28,82 @@ public final class MediaListener extends NotificationListenerService {
     /** package -> latest media title/creator; mutated only on the listener thread. */
     private static final Map<String, long[]> STAMPS = new LinkedHashMap<>(); // pkg -> {ts}
     private static final Map<String, String[]> TITLES = new LinkedHashMap<>(); // pkg -> {title, text}
+    private static final Map<String, Boolean> PRESENT = new LinkedHashMap<>(); // pkg -> media notification live?
+    private static final Map<String, Integer> NOTIF_IDS = new LinkedHashMap<>(); // pkg -> id of last recorded media notif
+    private static volatile boolean bound = false;
+
+    @Override
+    public void onListenerConnected() {
+        bound = true;
+        // Re-seed presence from whatever media notifications are live right now,
+        // so a service restart mid-playback doesn't think everything stopped.
+        StatusBarNotification[] active = getActiveNotifications();
+        int seeded = 0;
+        if (active != null) {
+            for (StatusBarNotification sbn : active) {
+                if (record(sbn, true)) seeded++;
+            }
+        }
+        android.util.Log.i("WTL", "connected: seeded " + seeded + " media notifications");
+    }
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-        record(sbn);
+        boolean media = record(sbn, true);
+        android.util.Log.i("WTL", "posted pkg=" + (sbn == null ? "?" : sbn.getPackageName())
+                + " media=" + media);
     }
 
     @Override
     public void onNotificationRemoved(StatusBarNotification sbn) {
-        // Keep the entry: the notification is replaced constantly during playback,
-        // and removing it on a paused session would drop the title mid-watch.
+        // Only mark absence for genuine media notifications; updates/reposts of
+        // the same media session do not fire a removal.
+        if (sbn == null) return;
+        Notification n = sbn.getNotification();
+        boolean media = n != null && n.extras != null
+                && n.extras.containsKey(Notification.EXTRA_MEDIA_SESSION);
+        // YouTube (and possibly others) strip the media-session extra from the
+        // notification before removing it, so also match by the id we recorded
+        // when the media notification was posted.
+        Integer recordedId = NOTIF_IDS.get(sbn.getPackageName());
+        boolean matches = media || (recordedId != null && recordedId == sbn.getId());
+        android.util.Log.i("WTL", "removed pkg=" + sbn.getPackageName() + " media=" + media
+                + " idMatch=" + (recordedId != null && recordedId == sbn.getId()));
+        if (!matches) return;
+        String pkg = sbn.getPackageName();
+        synchronized (TITLES) {
+            PRESENT.put(pkg, false);
+        }
     }
 
-    private static void record(StatusBarNotification sbn) {
-        if (sbn == null) return;
+    /** True when a media notification for pkg is live. When the listener has
+     *  never been bound (no Notification access) this returns true so heartbeats
+     *  keep the pre-listener behavior of counting app-foreground time. */
+    public static boolean isPlaying(Context c, String pkg) {
+        if (!bound) return true;
+        if (pkg == null) return false;
+        synchronized (TITLES) {
+            Boolean p = PRESENT.get(pkg);
+            return p != null && p;
+        }
+    }
+
+    /** Record a media notification for pkg; returns true when it was a media
+     *  notification (has EXTRA_MEDIA_SESSION) and was recorded. */
+    private static boolean record(StatusBarNotification sbn, boolean present) {
+        if (sbn == null) return false;
         String pkg = sbn.getPackageName();
         Notification n = sbn.getNotification();
-        if (n == null || n.extras == null) return;
-        boolean media = n.extras.containsKey(Notification.EXTRA_MEDIA_SESSION);
-        if (!media) return;
+        if (n == null || n.extras == null) return false;
+        if (!n.extras.containsKey(Notification.EXTRA_MEDIA_SESSION)) return false;
         CharSequence t = n.extras.getCharSequence(Notification.EXTRA_TITLE);
-        if (t == null || t.length() == 0) return;
+        if (t == null || t.length() == 0) return false;
         CharSequence x = n.extras.getCharSequence(Notification.EXTRA_TEXT);
         synchronized (TITLES) {
             TITLES.remove(pkg);
             STAMPS.remove(pkg);
+            PRESENT.put(pkg, present);
+            NOTIF_IDS.put(pkg, sbn.getId());
             TITLES.put(pkg, new String[]{t.toString(), x == null ? null : x.toString()});
             STAMPS.put(pkg, new long[]{System.currentTimeMillis()});
             while (TITLES.size() > CAP) {
@@ -61,6 +112,7 @@ public final class MediaListener extends NotificationListenerService {
                 STAMPS.remove(oldest);
             }
         }
+        return true;
     }
 
     /** Latest media info known for pkg, or null: {videoTitle, creator}. */
