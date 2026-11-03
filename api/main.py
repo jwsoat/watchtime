@@ -2067,7 +2067,11 @@ def merged_channels(window: str = "today", include_passive: bool = True, user: O
     groups = {}
     for (platform, channel), n in counts.items():
         seconds = _seconds_from_count(n)
-        display = media_names.get((platform, channel)) or channel
+        # Label rows by the raw channel handle so browser-tracked and
+        # phone-resolved entries read identically (and match what the
+        # creator-links settings UI lists). The friendly display_name is still
+        # attached per-member below for reference.
+        display = channel
         gid = alias_to_group.get((platform, channel))
         if gid is not None:
             key = ("group", gid)
