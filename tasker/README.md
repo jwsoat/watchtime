@@ -1,5 +1,10 @@
 # Android tracking via Tasker (`mobile-android` platform)
 
+> **Legacy path.** The native APK in [`../android/`](../android/README.md) now
+> does this job with no Tasker install: same heartbeats, same cadence, plus a
+> tracked-app picker and offline queueing. Use this Tasker project only if you
+> can't install an APK.
+
 The Android side of watchtime tracking: while a tracked app is in the
 foreground, a Tasker profile POSTs a heartbeat to the API every 10 seconds —
 the same cadence and heartbeat shape as the browser extension. `channel` is
