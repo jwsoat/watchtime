@@ -98,7 +98,11 @@ $("gate-input").addEventListener("keydown", (e) => {
 
 // ---------- Account picker ----------
 function usersEndpoint() {
-  return state.platform === "youtube" ? "/stats/youtube/users" : "/stats/users";
+  if (state.platform === "youtube") return "/stats/youtube/users";
+  // Merged endpoints resolve a user_accounts *label* server-side, not a
+  // login — sending a twitch login there 404s ("Merged account not found").
+  if (state.platform === "merged") return "/settings/user-accounts";
+  return "/stats/users";
 }
 
 function statsEndpoint() {
@@ -108,7 +112,11 @@ function statsEndpoint() {
 }
 
 async function loadAccountPicker() {
-  const { users } = await api(usersEndpoint());
+  const data = await api(usersEndpoint());
+  // /stats/* return {users:[{user,...}]}; /settings/user-accounts returns
+  // {accounts:[{label,...}]} — merged filters by label.
+  const users = data.users ||
+    (data.accounts || []).map(a => ({ user: a.label })).filter(u => u.user);
   const select = $("account-picker");
   select.innerHTML = "";
 
@@ -221,6 +229,8 @@ async function refresh() {
     });
   } catch (e) {
     console.warn("refresh failed", e);
+    $("channels").innerHTML =
+      '<div style="color:var(--muted)">Failed to load — check the console and try again.</div>';
   }
 }
 
