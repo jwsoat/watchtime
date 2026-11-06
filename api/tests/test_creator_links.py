@@ -40,7 +40,7 @@ def test_creator_link_channel_unique(client, auth_headers):
 
 def test_creator_link_rejects_bad_platform(client, auth_headers):
     res = client.post("/settings/creator-links",
-                      json={"label": "A", "platform": "tiktok", "channel": "x"},
+                      json={"label": "A", "platform": "myspace", "channel": "x"},
                       headers=auth_headers)
     assert res.status_code == 422
 

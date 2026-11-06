@@ -701,7 +701,7 @@ class HomeAssistantEntityUser(BaseModel):
 
 class CreatorAlias(BaseModel):
     label: str = Field(..., min_length=1, max_length=128)
-    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex|mobile-android)$")
+    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex|tiktok|mobile-android)$")
     channel: str = Field(..., min_length=1, max_length=128)
 
 
@@ -1529,7 +1529,7 @@ def delete_creator_group(group_id: int):
 
 
 class BulkCreatorAlias(BaseModel):
-    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex|mobile-android)$")
+    platform: str = Field(..., pattern="^(twitch|youtube|x|facebook|instagram|plex|tiktok|mobile-android)$")
     channel: str = Field(..., min_length=1, max_length=128)
 
 
