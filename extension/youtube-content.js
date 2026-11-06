@@ -72,6 +72,50 @@ function isShortsPage() {
   return location.pathname.startsWith("/shorts/");
 }
 
+// Shorts feed preloads neighbouring shorts, so the FIRST <video> in the DOM is
+// often a neighbour, not the one on screen. Mirror the TikTok script's
+// approach: pick the playing video with the largest viewport-visible area.
+function getPlayingVideo() {
+  const videos = [...document.querySelectorAll("video")];
+  let best = null;
+  let bestArea = 0;
+  for (const v of videos) {
+    if (v.paused || v.readyState < 2) continue;
+    const r = v.getBoundingClientRect();
+    const vh = window.innerHeight || document.documentElement.clientHeight;
+    const vw = window.innerWidth || document.documentElement.clientWidth;
+    const visible = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0)) *
+                    Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+    if (visible > bestArea) { bestArea = visible; best = v; }
+  }
+  return best;
+}
+
+// Channel/title lookup scoped to the playing video's ancestors. The Shorts
+// feed keeps neighbouring shorts in the DOM, so a document-wide query can
+// attribute the WRONG short's channel/title — walk up from the video instead.
+function getShortsInfoFromVideo(video) {
+  let channel = null;
+  let title = null;
+  let node = video;
+  for (let i = 0; i < 10 && node && (!channel || !title); i++) {
+    if (!channel) {
+      const link = node.querySelector?.('a[href^="/@"], a[href^="/channel/"]');
+      const href = link?.getAttribute("href") || "";
+      const handle = href.match(/^\/@([^/?#]+)/)?.[1];
+      channel = handle
+        ? handle.toLowerCase()
+        : (href.match(/^\/channel\/([^/?#]+)/)?.[1]?.toLowerCase() || null);
+    }
+    if (!title) {
+      const t = node.querySelector?.("yt-shorts-video-title-view-model h1, h1");
+      if (t?.textContent?.trim()) title = t.textContent.trim().slice(0, 512);
+    }
+    node = node.parentElement;
+  }
+  return { channel, title };
+}
+
 function getVideoState() {
   const video = document.querySelector("video");
   if (!video || video.readyState < 1) return { present: false };
@@ -114,10 +158,22 @@ function tick() {
   const videoId = getVideoId();
   if (!videoId) return;
 
+  const isShorts = isShortsPage();
+
+  // On Shorts, drive everything off the most-visible playing video (the feed
+  // preloads neighbours, so first-in-DOM / document-wide lookups mis-attribute).
+  let shortsInfo = null;
+  if (isShorts) {
+    const playing = getPlayingVideo();
+    if (!playing) return;
+    shortsInfo = getShortsInfoFromVideo(playing);
+    if (!shortsInfo.channel) return;
+  }
+
   const video = getVideoState();
   if (!video.present || video.paused) return;
 
-  const channel = getChannelFromDom();
+  const channel = isShorts ? shortsInfo.channel : getChannelFromDom();
   if (!channel) return;
 
   const tabVisible = document.visibilityState === "visible";
@@ -126,7 +182,7 @@ function tick() {
   const heartbeat = {
     ts: Math.floor(Date.now() / 1000),
     channel,
-    title: getVideoTitle(),
+    title: isShorts ? shortsInfo.title : getVideoTitle(),
     video_id: videoId,
     playlist_id: getPlaylistId(),
     state: idle ? "passive" : "active",
